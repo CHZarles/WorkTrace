@@ -59,7 +59,17 @@ jobs:
       - name: Package (installer)
         shell: pwsh
         run: |
-          powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -Installer
+          $maxAttempts = 2
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            Write-Host "Packaging attempt $attempt / $maxAttempts"
+            powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -Installer
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -ge $maxAttempts) {
+              throw "package-windows.ps1 failed after $maxAttempts attempts"
+            }
+            Write-Host "Packaging failed, retrying after short delay..."
+            Start-Sleep -Seconds 10
+          }
 
           $tag = "${env:GITHUB_REF_NAME}"
           if ([string]::IsNullOrWhiteSpace($tag)) { $tag = "manual" }
