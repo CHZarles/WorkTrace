@@ -293,7 +293,7 @@ class SettingsScreenState extends State<SettingsScreen> {
       _updatesError = null;
     });
     try {
-      final res = await mgr.installUpdate(latest: latest, installZipUrl: url);
+      final res = await mgr.installUpdate(latest: latest, installAssetUrl: url);
       if (!mounted) return;
       if (!res.ok) {
         setState(() => _updatesError = res.error ?? "install_failed");
@@ -1429,6 +1429,28 @@ class SettingsScreenState extends State<SettingsScreen> {
                               Text(
                                 "Tip: enable Privacy L2 (Store titles) to see YouTube video titles / VS Code workspace names.",
                                 style: Theme.of(context).textTheme.labelMedium,
+                              ),
+                              const SizedBox(height: RecorderTokens.space2),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.folder_open_outlined,
+                                    size: 16,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: RecorderTokens.space1),
+                                  Expanded(
+                                    child: Text(
+                                      "Installer path: %LOCALAPPDATA%\\Programs\\RecorderPhone\nDatabase: %LOCALAPPDATA%\\RecorderPhone\\recorder-core.db",
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelMedium,
+                                    ),
+                                  ),
+                                ],
                               ),
                               if (StartupController.instance.isAvailable) ...[
                                 const SizedBox(height: RecorderTokens.space2),

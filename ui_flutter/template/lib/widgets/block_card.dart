@@ -30,12 +30,18 @@ class BlockCard extends StatelessWidget {
     required this.onTap,
     this.previewFocus,
     this.previewAudioTop,
+    this.selectionMode = false,
+    this.selected = false,
+    this.onSelectedChanged,
   });
 
   final BlockSummary block;
   final VoidCallback onTap;
   final List<BlockCardItem>? previewFocus;
   final BlockCardItem? previewAudioTop;
+  final bool selectionMode;
+  final bool selected;
+  final ValueChanged<bool>? onSelectedChanged;
 
   bool _hasReview(BlockReview? r) {
     if (r == null) return false;
@@ -135,7 +141,8 @@ class BlockCard extends StatelessWidget {
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
-        onTap: onTap,
+        onTap: selectionMode ? () => onSelectedChanged?.call(!selected) : onTap,
+        onLongPress: selectionMode ? onTap : null,
         child: Padding(
           padding: const EdgeInsets.all(RecorderTokens.space4),
           child: Column(
@@ -155,6 +162,13 @@ class BlockCard extends StatelessWidget {
                       color: statusColor,
                     ),
                   ),
+                  if (selectionMode) ...[
+                    const SizedBox(width: RecorderTokens.space1),
+                    Checkbox(
+                      value: selected,
+                      onChanged: (v) => onSelectedChanged?.call(v ?? false),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: RecorderTokens.space2),

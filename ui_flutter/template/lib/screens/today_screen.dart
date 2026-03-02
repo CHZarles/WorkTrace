@@ -7,10 +7,10 @@ import "package:flutter/services.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
 import "../api/core_client.dart";
+import "block_detail_page.dart";
 import "../theme/tokens.dart";
 import "../utils/desktop_agent.dart";
 import "../utils/format.dart";
-import "../widgets/block_detail_sheet.dart";
 import "../widgets/day_timeline.dart";
 import "../widgets/entity_avatar.dart";
 import "../widgets/quick_review_sheet.dart";
@@ -959,11 +959,10 @@ class TodayScreenState extends State<TodayScreen> {
   }
 
   Future<void> _openBlock(BlockSummary b) async {
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => BlockDetailSheet(client: widget.client, block: b),
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => BlockDetailPage(client: widget.client, block: b),
+      ),
     );
     if (ok == true) {
       await refresh(silent: true, triggerReminder: false);

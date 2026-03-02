@@ -22,11 +22,18 @@ class _BlockStatItem {
 }
 
 class BlockDetailSheet extends StatefulWidget {
-  const BlockDetailSheet(
-      {super.key, required this.client, required this.block});
+  const BlockDetailSheet({
+    super.key,
+    required this.client,
+    required this.block,
+    this.showHeader = true,
+    this.asStandalonePage = false,
+  });
 
   final CoreClient client;
   final BlockSummary block;
+  final bool showHeader;
+  final bool asStandalonePage;
 
   @override
   State<BlockDetailSheet> createState() => _BlockDetailSheetState();
@@ -36,6 +43,7 @@ class _BlockDetailSheetState extends State<BlockDetailSheet> {
   late final TextEditingController _doing;
   late final TextEditingController _output;
   late final TextEditingController _next;
+  late final TextEditingController _skipReason;
   bool _saving = false;
   bool _deleting = false;
   bool _skipSaving = false;
@@ -46,6 +54,8 @@ class _BlockDetailSheetState extends State<BlockDetailSheet> {
 
   static const _presetTags = [
     "Work",
+    "Deep Work",
+    "Interrupted",
     "Meeting",
     "Learning",
     "Admin",
@@ -59,6 +69,8 @@ class _BlockDetailSheetState extends State<BlockDetailSheet> {
     _doing = TextEditingController(text: widget.block.review?.doing ?? "");
     _output = TextEditingController(text: widget.block.review?.output ?? "");
     _next = TextEditingController(text: widget.block.review?.next ?? "");
+    _skipReason =
+        TextEditingController(text: widget.block.review?.skipReason ?? "");
     _tags.addAll(widget.block.review?.tags ?? const []);
     _loadRules();
   }
@@ -68,6 +80,7 @@ class _BlockDetailSheetState extends State<BlockDetailSheet> {
     _doing.dispose();
     _output.dispose();
     _next.dispose();
+    _skipReason.dispose();
     super.dispose();
   }
 
@@ -255,11 +268,12 @@ class _BlockDetailSheetState extends State<BlockDetailSheet> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
+      final skipReason = _skipReason.text.trim();
       await widget.client.upsertReview(
         ReviewUpsert(
           blockId: widget.block.id,
           skipped: false,
-          skipReason: null,
+          skipReason: skipReason.isEmpty ? null : skipReason,
           doing: _doing.text.trim().isEmpty ? null : _doing.text.trim(),
           output: _output.text.trim().isEmpty ? null : _output.text.trim(),
           next: _next.text.trim().isEmpty ? null : _next.text.trim(),
@@ -281,11 +295,12 @@ class _BlockDetailSheetState extends State<BlockDetailSheet> {
   Future<void> _toggleSkip({required bool skipped}) async {
     setState(() => _skipSaving = true);
     try {
+      final skipReason = _skipReason.text.trim();
       await widget.client.upsertReview(
         ReviewUpsert(
           blockId: widget.block.id,
           skipped: skipped,
-          skipReason: null,
+          skipReason: skipped ? (skipReason.isEmpty ? null : skipReason) : null,
           doing: _doing.text.trim().isEmpty ? null : _doing.text.trim(),
           output: _output.text.trim().isEmpty ? null : _output.text.trim(),
           next: _next.text.trim().isEmpty ? null : _next.text.trim(),
@@ -343,8 +358,23 @@ class _BlockDetailSheetState extends State<BlockDetailSheet> {
     }
   }
 
+  String _formatDateTimeLocal(String rfc3339) {
+    try {
+      final t = DateTime.parse(rfc3339).toLocal();
+      final y = t.year.toString().padLeft(4, "0");
+      final m = t.month.toString().padLeft(2, "0");
+      final d = t.day.toString().padLeft(2, "0");
+      final hh = t.hour.toString().padLeft(2, "0");
+      final mm = t.minute.toString().padLeft(2, "0");
+      return "$y-$m-$d $hh:$mm";
+    } catch (_) {
+      return rfc3339;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final focusItems = widget.block.topItems.map(_statFromTopItem).toList();
     final audioItems =
         widget.block.backgroundTopItems.map(_statFromTopItem).toList();
@@ -358,6 +388,26 @@ class _BlockDetailSheetState extends State<BlockDetailSheet> {
     final allTags = {..._presetTags, ..._tags}.toList();
     allTags.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     final skipped = widget.block.review?.skipped == true;
+    final reviewed = widget.block.review != null;
+    final statusLabel = skipped
+        ? "Skipped"
+        : reviewed
+            ? "Reviewed"
+            : "Pending";
+    final statusColor = skipped
+        ? scheme.onSurfaceVariant
+        : reviewed
+            ? scheme.primary
+            : scheme.tertiary;
+    final startLocal = _formatDateTimeLocal(widget.block.startTs);
+    final endLocal = _formatDateTimeLocal(widget.block.endTs);
+    final focusSeconds = focusItems
+        .fold<int>(0, (sum, it) => sum + it.seconds)
+        .clamp(0, 1 << 31);
+    final audioSeconds = (widget.block.backgroundSeconds ??
+            audioItems.fold<int>(0, (sum, it) => sum + it.seconds))
+        .clamp(0, 1 << 31);
+    final reviewedAt = widget.block.review?.updatedAt;
 
     return CallbackShortcuts(
       bindings: {
@@ -377,14 +427,82 @@ class _BlockDetailSheetState extends State<BlockDetailSheet> {
             left: RecorderTokens.space4,
             right: RecorderTokens.space4,
             bottom: bottom + RecorderTokens.space4,
+            top: widget.asStandalonePage ? RecorderTokens.space2 : 0,
           ),
           child: ListView(
-            shrinkWrap: true,
+            shrinkWrap: !widget.asStandalonePage,
             children: [
-              Text("Block details",
-                  style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: RecorderTokens.space2),
-              Text("Top: $top", style: Theme.of(context).textTheme.labelMedium),
+              if (widget.showHeader) ...[
+                Text("Block details",
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: RecorderTokens.space2),
+                Text("Top: $top",
+                    style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(height: RecorderTokens.space3),
+              ],
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(RecorderTokens.space3),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: RecorderTokens.space2,
+                        runSpacing: RecorderTokens.space2,
+                        children: [
+                          Chip(
+                            avatar: Icon(Icons.flag_outlined,
+                                size: 16, color: statusColor),
+                            label: Text(statusLabel),
+                            side: BorderSide(
+                                color: statusColor.withValues(alpha: 0.25)),
+                          ),
+                          Chip(
+                            avatar:
+                                const Icon(Icons.schedule_outlined, size: 16),
+                            label:
+                                Text(formatDuration(widget.block.totalSeconds)),
+                          ),
+                          Chip(
+                            avatar:
+                                const Icon(Icons.center_focus_strong, size: 16),
+                            label:
+                                Text("Focus ${formatDuration(focusSeconds)}"),
+                          ),
+                          Chip(
+                            avatar: const Icon(Icons.headphones, size: 16),
+                            label:
+                                Text("Audio ${formatDuration(audioSeconds)}"),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: RecorderTokens.space2),
+                      Text(
+                        "Start: $startLocal",
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: RecorderTokens.space1),
+                      Text(
+                        "End: $endLocal",
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: RecorderTokens.space1),
+                      Text(
+                        "Focus items: ${focusItems.length} · Audio items: ${audioItems.length}",
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                      if (reviewedAt != null &&
+                          reviewedAt.trim().isNotEmpty) ...[
+                        const SizedBox(height: RecorderTokens.space1),
+                        Text(
+                          "Last review update: ${_formatDateTimeLocal(reviewedAt)}",
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
               const SizedBox(height: RecorderTokens.space4),
               Text("Top items", style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: RecorderTokens.space2),
@@ -568,19 +686,43 @@ class _BlockDetailSheetState extends State<BlockDetailSheet> {
               Text("Review", style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: RecorderTokens.space3),
               TextField(
-                  controller: _doing,
-                  decoration:
-                      const InputDecoration(labelText: "Doing (optional)")),
+                controller: _doing,
+                decoration: const InputDecoration(
+                  labelText: "Intent / What were you doing?",
+                  hintText:
+                      "Example: Inbox triage, coding feature X, meeting prep",
+                ),
+              ),
               const SizedBox(height: RecorderTokens.space3),
               TextField(
-                  controller: _output,
-                  decoration:
-                      const InputDecoration(labelText: "Output / Result")),
+                controller: _output,
+                decoration: const InputDecoration(
+                  labelText: "Output / Result",
+                  hintText: "What was produced or decided in this block?",
+                ),
+                minLines: 1,
+                maxLines: 3,
+              ),
               const SizedBox(height: RecorderTokens.space3),
               TextField(
-                  controller: _next,
-                  decoration:
-                      const InputDecoration(labelText: "Next (optional)")),
+                controller: _next,
+                decoration: const InputDecoration(
+                  labelText: "Next step",
+                  hintText: "The smallest concrete next action",
+                ),
+                minLines: 1,
+                maxLines: 2,
+              ),
+              const SizedBox(height: RecorderTokens.space3),
+              TextField(
+                controller: _skipReason,
+                decoration: const InputDecoration(
+                  labelText: "Skip reason (optional)",
+                  hintText: "Useful when marking this block as skipped",
+                ),
+                minLines: 1,
+                maxLines: 2,
+              ),
               const SizedBox(height: RecorderTokens.space4),
               Row(
                 children: [

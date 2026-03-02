@@ -4,7 +4,8 @@ param(
   [switch]$NoBuild,
   [switch]$NoOverlayUI,
   [switch]$InstallProtocol,
-  [switch]$Zip
+  [switch]$Zip,
+  [switch]$Installer
 )
 
 $ErrorActionPreference = "Stop"
@@ -150,6 +151,93 @@ function Get-Sha256 {
   }
 }
 
+function Resolve-IsccPath {
+  $cmd = Get-Command "iscc.exe" -ErrorAction SilentlyContinue
+  if ($cmd -and $cmd.Source) { return $cmd.Source }
+
+  $candidates = @()
+  if (${env:ProgramFiles(x86)}) {
+    $candidates += (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\\ISCC.exe")
+  }
+  if ($env:ProgramFiles) {
+    $candidates += (Join-Path $env:ProgramFiles "Inno Setup 6\\ISCC.exe")
+  }
+
+  foreach ($p in $candidates) {
+    if (-not [string]::IsNullOrWhiteSpace($p) -and (Test-Path $p)) {
+      return $p
+    }
+  }
+
+  return ""
+}
+
+function Get-InstallerVersion {
+  $tag = ""
+
+  if ($env:GITHUB_REF_NAME) {
+    $tag = $env:GITHUB_REF_NAME.ToString().Trim()
+  }
+
+  if ([string]::IsNullOrWhiteSpace($tag)) {
+    try {
+      $out = & git -C $RepoRoot describe --tags --always 2>$null
+      if ($out) { $tag = ($out -join "`n").Trim() }
+    } catch {
+      $tag = ""
+    }
+  }
+
+  if ($tag -match "^[vV](.+)$") {
+    $tag = $Matches[1]
+  }
+
+  if ($null -eq $tag) { $tag = "" }
+  $tag = $tag.ToString().Trim()
+  if ([string]::IsNullOrWhiteSpace($tag)) {
+    return "0.0.0-local"
+  }
+  return $tag
+}
+
+function Build-Installer {
+  param(
+    [Parameter(Mandatory = $true)][string]$RepoRoot,
+    [Parameter(Mandatory = $true)][string]$SourceDir,
+    [Parameter(Mandatory = $true)][string]$OutputDir
+  )
+
+  $issPath = Join-Path $RepoRoot "dev\\installer\\RecorderPhone.iss"
+  if (-not (Test-Path $issPath)) {
+    throw "Installer script not found: $issPath"
+  }
+
+  $iscc = Resolve-IsccPath
+  if ([string]::IsNullOrWhiteSpace($iscc)) {
+    throw "ISCC.exe (Inno Setup 6) not found. Install Inno Setup and retry (e.g. choco install innosetup -y)."
+  }
+
+  $version = Get-InstallerVersion
+  $outputBase = "RecorderPhone-Setup"
+  Write-Host "[package] build installer ($version) -> $(Join-Path $OutputDir "$outputBase.exe")"
+  & $iscc `
+    "/DAppVersion=$version" `
+    "/DAppSourceDir=$SourceDir" `
+    "/DOutputDir=$OutputDir" `
+    "/DOutputBaseFilename=$outputBase" `
+    $issPath
+
+  if ($LASTEXITCODE -ne 0) {
+    throw "Installer build failed (iscc exit code $LASTEXITCODE)."
+  }
+
+  $setupPath = Join-Path $OutputDir "$outputBase.exe"
+  if (-not (Test-Path $setupPath)) {
+    throw "Installer output not found: $setupPath"
+  }
+  return $setupPath
+}
+
 function Assert-SameHash {
   param(
     [Parameter(Mandatory = $true)][string]$Name,
@@ -241,7 +329,7 @@ function Write-BuildInfo {
     }
     update = @{
       githubRepo = if ([string]::IsNullOrWhiteSpace($githubRepo)) { $null } else { $githubRepo }
-      assetSuffix = "-windows.zip"
+      assetSuffix = "-windows-setup.exe"
     }
   }
 
@@ -489,10 +577,24 @@ if ($Zip) {
   Compress-Archive -Path (Join-Path $OutDir "*") -DestinationPath $zipPath -Force
 }
 
+$setupPath = ""
+if ($Installer) {
+  $setupPath = Build-Installer `
+    -RepoRoot $RepoRoot `
+    -SourceDir $OutDir `
+    -OutputDir (Split-Path $OutDir -Parent)
+}
+
 Write-Host "[package] done."
 Write-Host "Next:"
 if (Test-Path $distExe) {
   Write-Host "  Start: $distExe"
 } else {
   Write-Host "  Start: $uiExe"
+}
+if ($Zip) {
+  Write-Host "  Zip:   $zipPath"
+}
+if ($Installer -and (Test-Path $setupPath)) {
+  Write-Host "  Setup: $setupPath"
 }

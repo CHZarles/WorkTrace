@@ -3,10 +3,10 @@ import "dart:async";
 import "package:flutter/material.dart";
 
 import "../api/core_client.dart";
+import "block_detail_page.dart";
 import "../theme/tokens.dart";
 import "../utils/format.dart";
 import "../widgets/block_card.dart";
-import "../widgets/block_detail_sheet.dart";
 import "../widgets/quick_review_sheet.dart";
 
 class SearchScreen extends StatefulWidget {
@@ -40,6 +40,9 @@ class SearchScreenState extends State<SearchScreen> {
   List<BlockSummary> _blocks = const [];
   final Map<String, List<BlockCardItem>> _previewFocusByBlockId = {};
   final Map<String, BlockCardItem> _previewAudioTopByBlockId = {};
+  bool _batchMode = false;
+  bool _batchBusy = false;
+  final Set<String> _selectedPendingBlockIds = {};
 
   Timer? _autoRetryTimer;
   int _autoRetryAttempts = 0;
@@ -68,6 +71,9 @@ class SearchScreenState extends State<SearchScreen> {
           _blocks = const [];
           _previewFocusByBlockId.clear();
           _previewAudioTopByBlockId.clear();
+          _batchMode = false;
+          _batchBusy = false;
+          _selectedPendingBlockIds.clear();
         });
       }
       return;
@@ -177,6 +183,9 @@ class SearchScreenState extends State<SearchScreen> {
       );
       final previews = _buildPreviewsFromBlocks(blocks: blocks);
       if (!mounted) return;
+      final blockById = <String, BlockSummary>{
+        for (final b in blocks) b.id: b,
+      };
       setState(() {
         _blocks = blocks;
         _previewFocusByBlockId
@@ -185,6 +194,14 @@ class SearchScreenState extends State<SearchScreen> {
         _previewAudioTopByBlockId
           ..clear()
           ..addAll(previews.audioTop);
+        _selectedPendingBlockIds.removeWhere((id) {
+          final b = blockById[id];
+          if (b == null) return true;
+          return _isReviewed(b);
+        });
+        if (_selectedPendingBlockIds.isEmpty) {
+          _batchMode = false;
+        }
         _error = null;
       });
       _autoRetryAttempts = 0;
@@ -440,21 +457,204 @@ class SearchScreenState extends State<SearchScreen> {
     return out.where((b) => _matches(b, q)).toList();
   }
 
-  Future<void> _openBlock(BlockSummary b, {bool quick = false}) async {
-    final ok = await showModalBottomSheet<bool>(
+  List<BlockSummary> _selectedPendingBlocks() {
+    final selectedIds = _selectedPendingBlockIds;
+    if (selectedIds.isEmpty) return const [];
+    return _blocks
+        .where((b) => selectedIds.contains(b.id) && !_isReviewed(b))
+        .toList();
+  }
+
+  void _setBatchMode(bool enabled) {
+    setState(() {
+      _batchMode = enabled;
+      if (!enabled) {
+        _selectedPendingBlockIds.clear();
+      }
+    });
+  }
+
+  void _togglePendingSelection(BlockSummary b, bool selected) {
+    if (_isReviewed(b)) return;
+    setState(() {
+      if (selected) {
+        _selectedPendingBlockIds.add(b.id);
+      } else {
+        _selectedPendingBlockIds.remove(b.id);
+      }
+    });
+  }
+
+  Future<String?> _askTextInput({
+    required String title,
+    required String hintText,
+    String initialValue = "",
+    String confirmText = "Confirm",
+    bool allowEmpty = false,
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    final value = await showDialog<String>(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => quick
-          ? QuickReviewSheet(client: widget.client, block: b)
-          : BlockDetailSheet(client: widget.client, block: b),
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(hintText: hintText),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: Text(confirmText),
+          ),
+        ],
+      ),
     );
+    controller.dispose();
+    final out = value?.trim();
+    if (out == null) return null;
+    if (!allowEmpty && out.isEmpty) return null;
+    return out;
+  }
+
+  Future<void> _batchAddTag() async {
+    final targets = _selectedPendingBlocks();
+    if (targets.isEmpty || _batchBusy) return;
+    final tag = await _askTextInput(
+      title: "Batch tag pending blocks",
+      hintText: "Tag name (e.g. Work, Meeting)",
+      confirmText: "Apply",
+    );
+    if (tag == null || tag.isEmpty) return;
+
+    setState(() => _batchBusy = true);
+    var success = 0;
+    var failed = 0;
+    for (final b in targets) {
+      try {
+        final review = b.review;
+        final tags = {...(review?.tags ?? const <String>[]), tag}.toList();
+        await widget.client.upsertReview(
+          ReviewUpsert(
+            blockId: b.id,
+            skipped: review?.skipped ?? false,
+            skipReason: review?.skipReason,
+            doing: review?.doing,
+            output: review?.output,
+            next: review?.next,
+            tags: tags,
+          ),
+        );
+        success += 1;
+      } catch (_) {
+        failed += 1;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _batchBusy = false;
+      _batchMode = false;
+      _selectedPendingBlockIds.clear();
+    });
+    await _load(silent: true);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          failed == 0
+              ? "Tagged $success pending blocks"
+              : "Tagged $success blocks, failed $failed",
+        ),
+      ),
+    );
+  }
+
+  Future<void> _batchSkip() async {
+    final targets = _selectedPendingBlocks();
+    if (targets.isEmpty || _batchBusy) return;
+
+    final reason = await _askTextInput(
+      title: "Batch skip pending blocks",
+      hintText: "Optional reason (leave empty to skip without reason)",
+      confirmText: "Skip selected",
+      allowEmpty: true,
+    );
+    if (reason == null) return;
+
+    setState(() => _batchBusy = true);
+    var success = 0;
+    var failed = 0;
+    for (final b in targets) {
+      try {
+        final review = b.review;
+        await widget.client.upsertReview(
+          ReviewUpsert(
+            blockId: b.id,
+            skipped: true,
+            skipReason: reason.isEmpty ? null : reason,
+            doing: review?.doing,
+            output: review?.output,
+            next: review?.next,
+            tags: review?.tags ?? const [],
+          ),
+        );
+        success += 1;
+      } catch (_) {
+        failed += 1;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _batchBusy = false;
+      _batchMode = false;
+      _selectedPendingBlockIds.clear();
+    });
+    await _load(silent: true);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          failed == 0
+              ? "Skipped $success pending blocks"
+              : "Skipped $success blocks, failed $failed",
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openBlock(BlockSummary b, {bool quick = false}) async {
+    final bool? ok;
+    if (quick) {
+      ok = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (_) => QuickReviewSheet(client: widget.client, block: b),
+      );
+    } else {
+      ok = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => BlockDetailPage(client: widget.client, block: b),
+        ),
+      );
+    }
     if (ok == true) {
       await _load(silent: true);
     }
   }
 
-  Widget _searchHeader(BuildContext context, int results, int total) {
+  Widget _searchHeader(
+    BuildContext context,
+    int results,
+    int total,
+    List<BlockSummary> filtered,
+  ) {
     final date = _dateLocal(_day);
     final isWide = MediaQuery.of(context).size.width >= 720;
 
@@ -499,9 +699,90 @@ class SearchScreenState extends State<SearchScreen> {
         ],
         selected: {_statusFilter},
         showSelectedIcon: false,
-        onSelectionChanged: (v) => setState(() => _statusFilter = v.first),
+        onSelectionChanged: (v) => setState(() {
+          _statusFilter = v.first;
+          if (_statusFilter != _BlockStatusFilter.pending) {
+            _batchMode = false;
+            _selectedPendingBlockIds.clear();
+          }
+        }),
       ),
     );
+
+    final pendingVisible = filtered.where((b) => !_isReviewed(b)).toList();
+    final pendingVisibleIds = pendingVisible.map((b) => b.id).toSet();
+    final selectedVisibleCount = _selectedPendingBlockIds
+        .where((id) => pendingVisibleIds.contains(id))
+        .length;
+    final selectedTotalCount = _selectedPendingBlockIds.length;
+
+    final Widget batchBar = (_statusFilter == _BlockStatusFilter.pending)
+        ? Wrap(
+            spacing: RecorderTokens.space2,
+            runSpacing: RecorderTokens.space2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: !_batchMode
+                ? [
+                    OutlinedButton.icon(
+                      onPressed: pendingVisible.isEmpty
+                          ? null
+                          : () => _setBatchMode(true),
+                      icon: const Icon(Icons.checklist_rtl, size: 18),
+                      label: const Text("Batch actions"),
+                    ),
+                  ]
+                : [
+                    Chip(
+                      avatar: _batchBusy
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.checklist, size: 16),
+                      label: Text("$selectedTotalCount selected"),
+                    ),
+                    OutlinedButton(
+                      onPressed: _batchBusy || pendingVisible.isEmpty
+                          ? null
+                          : () => setState(() {
+                                if (selectedVisibleCount ==
+                                    pendingVisible.length) {
+                                  _selectedPendingBlockIds
+                                      .removeWhere(pendingVisibleIds.contains);
+                                } else {
+                                  _selectedPendingBlockIds
+                                      .addAll(pendingVisibleIds);
+                                }
+                              }),
+                      child: Text(
+                        selectedVisibleCount == pendingVisible.length &&
+                                pendingVisible.isNotEmpty
+                            ? "Clear visible"
+                            : "Select visible",
+                      ),
+                    ),
+                    FilledButton.icon(
+                      onPressed: _batchBusy || selectedTotalCount == 0
+                          ? null
+                          : _batchAddTag,
+                      icon: const Icon(Icons.sell_outlined, size: 18),
+                      label: const Text("Batch tag"),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _batchBusy || selectedTotalCount == 0
+                          ? null
+                          : _batchSkip,
+                      icon: const Icon(Icons.skip_next, size: 18),
+                      label: const Text("Batch skip"),
+                    ),
+                    TextButton(
+                      onPressed: _batchBusy ? null : () => _setBatchMode(false),
+                      child: const Text("Cancel"),
+                    ),
+                  ],
+          )
+        : const SizedBox.shrink();
 
     final Widget content = isWide
         ? Column(
@@ -522,6 +803,10 @@ class SearchScreenState extends State<SearchScreen> {
                   filter,
                 ],
               ),
+              if (_statusFilter == _BlockStatusFilter.pending) ...[
+                const SizedBox(height: RecorderTokens.space2),
+                batchBar,
+              ],
             ],
           )
         : Column(
@@ -538,6 +823,10 @@ class SearchScreenState extends State<SearchScreen> {
               ),
               const SizedBox(height: RecorderTokens.space2),
               filter,
+              if (_statusFilter == _BlockStatusFilter.pending) ...[
+                const SizedBox(height: RecorderTokens.space2),
+                batchBar,
+              ],
             ],
           );
 
@@ -598,14 +887,27 @@ class SearchScreenState extends State<SearchScreen> {
             const SizedBox(height: RecorderTokens.space3),
         itemBuilder: (context, i) {
           if (i == 0) {
-            return _searchHeader(context, filtered.length, _blocks.length);
+            return _searchHeader(
+              context,
+              filtered.length,
+              _blocks.length,
+              filtered,
+            );
           }
           final block = filtered[i - 1];
+          final pending = !_isReviewed(block);
+          final selectionMode =
+              _batchMode && _statusFilter == _BlockStatusFilter.pending;
           return BlockCard(
             block: block,
             onTap: () => _openBlock(block),
             previewFocus: _previewFocusByBlockId[block.id],
             previewAudioTop: _previewAudioTopByBlockId[block.id],
+            selectionMode: selectionMode && pending,
+            selected: _selectedPendingBlockIds.contains(block.id),
+            onSelectedChanged: selectionMode && pending
+                ? (v) => _togglePendingSelection(block, v)
+                : null,
           );
         },
       ),

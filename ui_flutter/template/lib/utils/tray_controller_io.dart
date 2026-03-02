@@ -45,6 +45,48 @@ class _IoTrayController with WindowListener implements TrayController {
     return "$a$sep$b";
   }
 
+  String _appDirPath() {
+    try {
+      return File(Platform.resolvedExecutable).parent.path;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  String _defaultDataDirPath() {
+    final sep = Platform.pathSeparator;
+    final base = (Platform.environment["LOCALAPPDATA"] ?? "").trim();
+    final fallback = (Platform.environment["APPDATA"] ?? "").trim();
+    final root = base.isNotEmpty
+        ? base
+        : (fallback.isNotEmpty ? fallback : Directory.systemTemp.path);
+    return "$root${sep}RecorderPhone";
+  }
+
+  Future<void> _openPathInExplorer(String path,
+      {bool ensureDirectoryExists = false}) async {
+    final p = path.trim();
+    if (p.isEmpty) return;
+    if (ensureDirectoryExists) {
+      try {
+        await Directory(p).create(recursive: true);
+      } catch (_) {
+        // ignore
+      }
+    }
+    try {
+      await Process.start("explorer.exe", [p], mode: ProcessStartMode.detached);
+      return;
+    } catch (_) {
+      // fallback
+    }
+    try {
+      await Process.run("explorer.exe", [p]);
+    } catch (_) {
+      // ignore
+    }
+  }
+
   String _trayIconPath() {
     try {
       final exeDir = File(Platform.resolvedExecutable).parent.path;
@@ -230,6 +272,15 @@ class _IoTrayController with WindowListener implements TrayController {
         MenuItemLabel(label: "Server: $url", enabled: false),
       MenuSeparator(),
       MenuItemLabel(label: "Open / Hide", onClicked: (_) => _toggleWindow()),
+      MenuItemLabel(
+        label: "Open app folder",
+        onClicked: (_) => _openPathInExplorer(_appDirPath()),
+      ),
+      MenuItemLabel(
+        label: "Open data folder",
+        onClicked: (_) => _openPathInExplorer(_defaultDataDirPath(),
+            ensureDirectoryExists: true),
+      ),
       MenuItemLabel(
         label: "Quick Review",
         onClicked: (_) async {

@@ -33,6 +33,19 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (Get-Command iscc.exe -ErrorAction SilentlyContinue) {
+            Write-Host "ISCC already available."
+            exit 0
+          }
+          choco install innosetup --no-progress -y
+          $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\\ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            throw "ISCC.exe not found after installation."
+          }
+
       - name: Ensure Flutter Windows project files
         shell: pwsh
         run: |
@@ -43,27 +56,27 @@ jobs:
           flutter create --platforms=windows --overwrite .
           Pop-Location
 
-      - name: Package (zip)
+      - name: Package (installer)
         shell: pwsh
         run: |
-          powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -Zip
+          powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -Installer
 
           $tag = "${env:GITHUB_REF_NAME}"
           if ([string]::IsNullOrWhiteSpace($tag)) { $tag = "manual" }
 
-          $src = Join-Path $env:GITHUB_WORKSPACE "dist\\windows\\RecorderPhone-windows.zip"
-          $dst = Join-Path $env:GITHUB_WORKSPACE ("dist\\windows\\RecorderPhone-" + $tag + "-windows.zip")
-          if (Test-Path $dst) { Remove-Item -Force $dst }
-          Move-Item -Force $src $dst
+          $setupSrc = Join-Path $env:GITHUB_WORKSPACE "dist\\windows\\RecorderPhone-Setup.exe"
+          $setupDst = Join-Path $env:GITHUB_WORKSPACE ("dist\\windows\\RecorderPhone-" + $tag + "-windows-setup.exe")
+          if (Test-Path $setupDst) { Remove-Item -Force $setupDst }
+          Move-Item -Force $setupSrc $setupDst
 
-          "ZIP_PATH=$dst" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "SETUP_PATH=$setupDst" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
         id: package
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: RecorderPhone-${{ github.ref_name }}-windows
-          path: ${{ steps.package.outputs.ZIP_PATH }}
+          path: ${{ steps.package.outputs.SETUP_PATH }}
 
       - name: Check release notes
         if: startsWith(github.ref, 'refs/tags/')
@@ -82,12 +95,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && steps.notes.outputs.HAS_NOTES == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.package.outputs.ZIP_PATH }}
+          files: ${{ steps.package.outputs.SETUP_PATH }}
           body_path: release-notes/${{ github.ref_name }}.md
 
       - name: Publish GitHub Release (auto notes)
         if: startsWith(github.ref, 'refs/tags/') && steps.notes.outputs.HAS_NOTES != 'true'
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.package.outputs.ZIP_PATH }}
+          files: ${{ steps.package.outputs.SETUP_PATH }}
           generate_release_notes: true

@@ -17,13 +17,14 @@ class _StubUpdateManager implements UpdateManager {
 
   @override
   Future<UpdateCheckResult> checkLatest({required String gitHubRepo}) async {
-    return const UpdateCheckResult(ok: false, error: "not_supported", updateAvailable: false);
+    return const UpdateCheckResult(
+        ok: false, error: "not_supported", updateAvailable: false);
   }
 
   @override
   Future<UpdateInstallResult> installUpdate({
     required UpdateRelease latest,
-    required String installZipUrl,
+    required String installAssetUrl,
     bool startMinimized = false,
   }) async {
     return const UpdateInstallResult(ok: false, error: "not_supported");

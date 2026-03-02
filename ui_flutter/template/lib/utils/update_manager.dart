@@ -22,7 +22,7 @@ abstract class UpdateManager {
   /// Only supported in packaged Windows builds.
   Future<UpdateInstallResult> installUpdate({
     required UpdateRelease latest,
-    required String installZipUrl,
+    required String installAssetUrl,
     bool startMinimized = false,
   });
 }

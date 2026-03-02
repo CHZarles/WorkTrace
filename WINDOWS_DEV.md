@@ -222,7 +222,7 @@ powershell -ExecutionPolicy Bypass -File .\dev\install-recorderphone-protocol.ps
 
 ```powershell
 cd C:\src\RecorderPhone
-powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -InstallProtocol
+powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -Installer -InstallProtocol
 ```
 
 说明：
@@ -230,11 +230,13 @@ powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -InstallProto
 - 输出目录会生成 `build-info.json`（包含 git commit、core/collector 版本与 sha256），并会在打包完成后对 `recorder_core.exe/windows_collector.exe` 做 sha256 校验；校验失败会直接报错，避免你误跑到旧 core。
 - 若仍提示文件被占用：先退出 RecorderPhone（托盘里 Exit），或执行：`powershell -ExecutionPolicy Bypass -File .\dev\stop-agent.ps1 -KillAllByName`，再重试打包。
 
-产物目录：
+产物：
 - `C:\src\RecorderPhone\dist\windows\RecorderPhone\RecorderPhone.exe`
+- `C:\src\RecorderPhone\dist\windows\RecorderPhone-Setup.exe`（安装版，推荐分发）
 
 运行方式：
-- 直接双击 `RecorderPhone.exe`
+- 安装版：运行 `RecorderPhone-Setup.exe`，默认安装到 `%LOCALAPPDATA%\Programs\RecorderPhone`
+- 或直接从 `dist\windows\RecorderPhone\RecorderPhone.exe` 本地验证
 - 默认 `Server URL` 是 `http://127.0.0.1:17600`，UI 启动后会 **best-effort 自动确保本机 Agent 运行**（Core/Collector 都会起来）。
 
 > `-InstallProtocol` 是为了让 Windows Toast 的按钮（Quick Review / Skip / Pause）可以通过 `recorderphone://...` 直达 UI；如果你暂时不需要 Toast 深链，可以去掉它。

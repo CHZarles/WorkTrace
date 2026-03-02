@@ -10,6 +10,7 @@ UpdateManager getUpdateManager() => _IoUpdateManager();
 
 class _IoUpdateManager implements UpdateManager {
   static const _userAgent = "RecorderPhone";
+  static const _defaultAssetSuffix = "-windows-setup.exe";
 
   @override
   bool get isAvailable => !kIsWeb && Platform.isWindows;
@@ -214,7 +215,7 @@ class _IoUpdateManager implements UpdateManager {
     final assets = (obj["assets"] is List) ? (obj["assets"] as List) : const [];
     Map? best;
     final suffix =
-        assetSuffix.trim().isEmpty ? "-windows.zip" : assetSuffix.trim();
+        assetSuffix.trim().isEmpty ? _defaultAssetSuffix : assetSuffix.trim();
     final suffixLower = suffix.toLowerCase();
     for (final a in assets) {
       if (a is! Map) continue;
@@ -262,8 +263,18 @@ class _IoUpdateManager implements UpdateManager {
 
     try {
       final current = await readBuildInfo();
-      final suffix = (current?.updateAssetSuffix ?? "-windows.zip").trim();
-      final latest = await _fetchLatestRelease(repo, assetSuffix: suffix);
+      final configuredSuffix = (current?.updateAssetSuffix ?? "").trim();
+      final suffix =
+          configuredSuffix.isEmpty ? _defaultAssetSuffix : configuredSuffix;
+      var latest = await _fetchLatestRelease(repo, assetSuffix: suffix);
+
+      final hasAsset = (latest?.assetUrl ?? "").trim().isNotEmpty;
+      final suffixIsSetup =
+          suffix.toLowerCase() == _defaultAssetSuffix.toLowerCase();
+      if (!hasAsset && !suffixIsSetup) {
+        latest =
+            await _fetchLatestRelease(repo, assetSuffix: _defaultAssetSuffix);
+      }
 
       final curTag = (current?.gitTag ?? "").trim();
       final canCompare = curTag.isNotEmpty;
@@ -285,7 +296,11 @@ class _IoUpdateManager implements UpdateManager {
 
   Future<File> _downloadToTempFile(Uri url) async {
     final tmp = Directory.systemTemp;
-    final name = "RecorderPhone-${DateTime.now().millisecondsSinceEpoch}.zip";
+    final lowerPath = url.path.toLowerCase();
+    final ext = lowerPath.endsWith(".exe")
+        ? ".exe"
+        : (lowerPath.endsWith(".zip") ? ".zip" : ".bin");
+    final name = "RecorderPhone-${DateTime.now().millisecondsSinceEpoch}$ext";
     final f = File(_join(tmp.path, name));
     final req = http.Request("GET", url);
     req.headers["User-Agent"] = _userAgent;
@@ -306,10 +321,10 @@ class _IoUpdateManager implements UpdateManager {
   }
 
   String _updaterScript() {
-    // Keep the script self-contained to avoid shipping extra files in the zip.
+    // Keep the script self-contained to avoid shipping extra files in the app.
     return r'''
 param(
-  [Parameter(Mandatory=$true)][string]$ZipPath,
+  [Parameter(Mandatory=$true)][string]$SetupPath,
   [Parameter(Mandatory=$true)][string]$InstallDir,
   [string]$ExeName = "RecorderPhone.exe",
   [int]$UiPid = 0,
@@ -338,7 +353,7 @@ function Wait-NotRunning {
   }
 }
 
-if (!(Test-Path $ZipPath)) { throw "zip_not_found" }
+if (!(Test-Path $SetupPath)) { throw "setup_not_found" }
 if ([string]::IsNullOrWhiteSpace($InstallDir)) { throw "install_dir_missing" }
 
 $names = @("RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector")
@@ -346,24 +361,19 @@ Stop-ByName -Names $names
 try { if ($UiPid -gt 0) { Wait-Process -Id $UiPid -Timeout 15 } } catch {}
 Wait-NotRunning -Names $names -TimeoutSeconds 10
 
-$staging = Join-Path ([System.IO.Path]::GetTempPath()) ("RecorderPhone.__update__." + [Guid]::NewGuid().ToString("n"))
-New-Item -ItemType Directory -Force $staging | Out-Null
-Expand-Archive -Path $ZipPath -DestinationPath $staging -Force
+$setupArgs = @(
+  "/VERYSILENT",
+  "/SUPPRESSMSGBOXES",
+  "/NORESTART",
+  "/SP-",
+  "/CLOSEAPPLICATIONS",
+  "/FORCECLOSEAPPLICATIONS",
+  "/DIR=""$InstallDir"""
+)
 
-$newExe = Join-Path $staging $ExeName
-if (!(Test-Path $newExe)) {
-  $c = Get-ChildItem -Path $staging -Filter "*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($c) { $ExeName = $c.Name } else { throw "new_exe_not_found" }
-}
-
-$oldDir = "$InstallDir.__old__"
-try { if (Test-Path $oldDir) { Remove-Item -Recurse -Force $oldDir -ErrorAction SilentlyContinue } } catch {}
-
-if (Test-Path $InstallDir) {
-  try { Move-Item -Force $InstallDir $oldDir } catch { throw "move_old_failed: $($_.Exception.Message)" }
-}
-
-try { Move-Item -Force $staging $InstallDir } catch { throw "move_new_failed: $($_.Exception.Message)" }
+$setupProc = Start-Process -FilePath $SetupPath -ArgumentList $setupArgs -PassThru -Wait
+if ($null -eq $setupProc) { throw "setup_start_failed" }
+if ($setupProc.ExitCode -ne 0) { throw "setup_failed_exit_$($setupProc.ExitCode)" }
 
 $exe = Join-Path $InstallDir $ExeName
 if (!(Test-Path $exe)) {
@@ -386,7 +396,7 @@ try {
   @override
   Future<UpdateInstallResult> installUpdate({
     required UpdateRelease latest,
-    required String installZipUrl,
+    required String installAssetUrl,
     bool startMinimized = false,
   }) async {
     if (!isAvailable)
@@ -408,13 +418,13 @@ try {
 
     Uri url;
     try {
-      url = Uri.parse(installZipUrl.trim());
+      url = Uri.parse(installAssetUrl.trim());
     } catch (_) {
       return const UpdateInstallResult(ok: false, error: "invalid_url");
     }
 
     try {
-      final zip = await _downloadToTempFile(url);
+      final setupAsset = await _downloadToTempFile(url);
       final scriptFile =
           File(_join(Directory.systemTemp.path, "RecorderPhone-update.ps1"));
       await scriptFile.writeAsString(_updaterScript(), flush: true);
@@ -429,8 +439,8 @@ try {
         "Bypass",
         "-File",
         scriptFile.path,
-        "-ZipPath",
-        zip.path,
+        "-SetupPath",
+        setupAsset.path,
         "-InstallDir",
         dir.path,
         "-ExeName",
