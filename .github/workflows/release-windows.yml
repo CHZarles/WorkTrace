@@ -59,10 +59,14 @@ jobs:
       - name: Package (installer)
         shell: pwsh
         run: |
+          $logPath = Join-Path $env:GITHUB_WORKSPACE "dist\\windows\\package-installer.log"
+          New-Item -ItemType Directory -Force (Split-Path $logPath -Parent) | Out-Null
+          if (Test-Path $logPath) { Remove-Item -Force $logPath }
+
           $maxAttempts = 2
           for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
             Write-Host "Packaging attempt $attempt / $maxAttempts"
-            powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -Installer
+            & powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -Installer *>&1 | Tee-Object -FilePath $logPath -Append
             if ($LASTEXITCODE -eq 0) { break }
             if ($attempt -ge $maxAttempts) {
               throw "package-windows.ps1 failed after $maxAttempts attempts"
@@ -81,6 +85,14 @@ jobs:
 
           "SETUP_PATH=$setupDst" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
         id: package
+
+      - name: Upload packaging log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RecorderPhone-${{ github.ref_name }}-packaging-log
+          path: dist/windows/package-installer.log
+          if-no-files-found: warn
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
