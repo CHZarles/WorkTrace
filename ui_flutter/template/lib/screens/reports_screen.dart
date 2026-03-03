@@ -13,7 +13,9 @@ import "../widgets/recorder_tooltip.dart";
 
 enum _ReportKindFilter { daily, weekly }
 
-enum _TodoCalendarView { day, week, month }
+enum _PlannerDimension { todo, calendar }
+
+enum _TodoCalendarView { week, month }
 
 class _ScheduledTodoLayout {
   const _ScheduledTodoLayout({
@@ -76,7 +78,8 @@ class ReportsScreenState extends State<ReportsScreen> {
   List<ReportTodo> _todos = const [];
 
   _ReportKindFilter _filter = _ReportKindFilter.daily;
-  _TodoCalendarView _todoView = _TodoCalendarView.week;
+  _PlannerDimension _plannerDimension = _PlannerDimension.todo;
+  _TodoCalendarView _todoCalendarView = _TodoCalendarView.week;
   DateTime _todoAnchorDay = DateTime.now();
 
   bool _enabled = false;
@@ -108,6 +111,7 @@ class ReportsScreenState extends State<ReportsScreen> {
 
   bool _agentBusy = false;
   Timer? _calendarTicker;
+  final Set<String> _firedReminderKeys = <String>{};
   int? _dragTodoId;
   int? _dragOriginDayIndex;
   int? _dragOriginStartMinute;
@@ -128,8 +132,9 @@ class ReportsScreenState extends State<ReportsScreen> {
     _todoAnchorDay = _normalizeDay(DateTime.now());
     _calendarTicker = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted || !widget.isActive) return;
-      if (_todoView == _TodoCalendarView.week ||
-          _todoView == _TodoCalendarView.day) {
+      _checkTodoReminders();
+      if (_plannerDimension == _PlannerDimension.calendar &&
+          _todoCalendarView == _TodoCalendarView.week) {
         setState(() {});
       }
     });
@@ -378,6 +383,8 @@ class ReportsScreenState extends State<ReportsScreen> {
         _error = null;
       });
       _applySettingsToControllers(settings);
+      _compactReminderFiredKeys();
+      _checkTodoReminders();
       _autoRetryAttempts = 0;
     } catch (e) {
       if (!mounted) return;
@@ -550,6 +557,59 @@ class ReportsScreenState extends State<ReportsScreen> {
     return "$open open · $done done";
   }
 
+  String _todoReminderKey(ReportTodo todo) {
+    final raw = (todo.reminderTs ?? "").trim();
+    return "${todo.id}|$raw";
+  }
+
+  void _compactReminderFiredKeys() {
+    if (_firedReminderKeys.isEmpty) return;
+    final alive = <String>{};
+    for (final todo in _todos) {
+      if (todo.done) continue;
+      final rem = (todo.reminderTs ?? "").trim();
+      if (rem.isEmpty) continue;
+      alive.add(_todoReminderKey(todo));
+    }
+    _firedReminderKeys.retainAll(alive);
+  }
+
+  void _checkTodoReminders() {
+    if (!mounted || !widget.isActive) return;
+    final nowUtc = DateTime.now().toUtc();
+    final due = _todos.where((todo) {
+      if (todo.done) return false;
+      final reminder = todo.reminderUtc;
+      if (reminder == null) return false;
+      if (reminder.isAfter(nowUtc)) return false;
+      final age = nowUtc.difference(reminder);
+      return age <= const Duration(hours: 12);
+    }).toList()
+      ..sort((a, b) {
+        final ar = a.reminderUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final br = b.reminderUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return ar.compareTo(br);
+      });
+    for (final todo in due) {
+      final key = _todoReminderKey(todo);
+      if (_firedReminderKeys.contains(key)) continue;
+      _firedReminderKeys.add(key);
+      final label = _todoReminderLabel(todo);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 8),
+          showCloseIcon: true,
+          content: Text("Reminder · $label\n${todo.content}"),
+          action: SnackBarAction(
+            label: "Open",
+            onPressed: () => _openTodoEditor(todo: todo),
+          ),
+        ),
+      );
+      break;
+    }
+  }
+
   DateTime _todoDay(ReportTodo todo) {
     final start = todo.startLocal;
     if (start != null) return _normalizeDay(start);
@@ -582,6 +642,21 @@ class ReportsScreenState extends State<ReportsScreen> {
     return en.difference(st).inMinutes.clamp(15, 12 * 60);
   }
 
+  DateTime? _todoReminderLocal(ReportTodo todo) {
+    return todo.reminderLocal;
+  }
+
+  String _todoReminderLabel(ReportTodo todo) {
+    final reminder = _todoReminderLocal(todo);
+    if (reminder == null) return "No reminder";
+    final y = reminder.year.toString().padLeft(4, "0");
+    final m = reminder.month.toString().padLeft(2, "0");
+    final d = reminder.day.toString().padLeft(2, "0");
+    final hh = reminder.hour.toString().padLeft(2, "0");
+    final mm = reminder.minute.toString().padLeft(2, "0");
+    return "$y-$m-$d $hh:$mm";
+  }
+
   String _todoHourLabel(int hour) => "${hour.toString().padLeft(2, "0")}:00";
 
   String _todoDayTitle(DateTime day) {
@@ -593,10 +668,7 @@ class ReportsScreenState extends State<ReportsScreen> {
   }
 
   String _todoRangeLabel() {
-    if (_todoView == _TodoCalendarView.day) {
-      return _dateLocal(_todoAnchorDay);
-    }
-    if (_todoView == _TodoCalendarView.week) {
+    if (_todoCalendarView == _TodoCalendarView.week) {
       final start = _startOfWeekMonday(_todoAnchorDay);
       final end = start.add(const Duration(days: 6));
       return "${_dateLocal(start)} ~ ${_dateLocal(end)}";
@@ -614,12 +686,7 @@ class ReportsScreenState extends State<ReportsScreen> {
       _dragCurrentStartMinute = null;
       _dragDurationMinutes = null;
       _dragStartGlobalPosition = null;
-      if (_todoView == _TodoCalendarView.day) {
-        _todoAnchorDay = _normalizeDay(
-            _todoAnchorDay.add(Duration(days: step.sign == 0 ? 0 : step)));
-        return;
-      }
-      if (_todoView == _TodoCalendarView.week) {
+      if (_todoCalendarView == _TodoCalendarView.week) {
         _todoAnchorDay =
             _normalizeDay(_todoAnchorDay.add(Duration(days: 7 * step)));
         return;
@@ -643,11 +710,6 @@ class ReportsScreenState extends State<ReportsScreen> {
       return b.updatedAt.compareTo(a.updatedAt);
     });
     return out;
-  }
-
-  List<ReportTodo> _todosForDay(DateTime day) {
-    final d = _normalizeDay(day);
-    return _sortTodos(_todos.where((t) => _todoDay(t) == d));
   }
 
   List<ReportTodo> _todosForMonth(DateTime anchor) {
@@ -879,6 +941,8 @@ class ReportsScreenState extends State<ReportsScreen> {
   Future<void> _openTodoEditor({
     ReportTodo? todo,
     DateTime? suggestedDay,
+    int? suggestedStartMinute,
+    bool forceSchedule = false,
   }) async {
     if (_todoBusy) return;
 
@@ -887,11 +951,24 @@ class ReportsScreenState extends State<ReportsScreen> {
     var day = _normalizeDay(
         suggestedDay ?? (todo != null ? _todoDay(todo) : _todoAnchorDay));
     final existingStartLocal = todo?.startLocal;
-    var withSchedule = todo != null && _todoHasSchedule(todo);
+    var withSchedule =
+        forceSchedule || (todo != null && _todoHasSchedule(todo));
     var startTime = withSchedule && existingStartLocal != null
         ? TimeOfDay.fromDateTime(existingStartLocal)
         : const TimeOfDay(hour: 9, minute: 0);
-    var durationMinutes = withSchedule ? _todoDurationMinutes(todo) : 60;
+    if (suggestedStartMinute != null && todo == null) {
+      final startMinute = suggestedStartMinute.clamp(0, 24 * 60 - 15);
+      startTime = TimeOfDay(hour: startMinute ~/ 60, minute: startMinute % 60);
+      withSchedule = true;
+    }
+    var durationMinutes =
+        withSchedule && todo != null ? _todoDurationMinutes(todo) : 60;
+    final existingReminderLocal = todo?.reminderLocal;
+    var withReminder = existingReminderLocal != null;
+    var reminderDay = _normalizeDay(existingReminderLocal ?? day);
+    var reminderTime = existingReminderLocal != null
+        ? TimeOfDay.fromDateTime(existingReminderLocal)
+        : const TimeOfDay(hour: 8, minute: 45);
 
     final ok = await showDialog<bool>(
       context: context,
@@ -993,6 +1070,56 @@ class ReportsScreenState extends State<ReportsScreen> {
                   ),
                 ],
                 const SizedBox(height: RecorderTokens.space1),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text("Set reminder"),
+                  subtitle: const Text(
+                      "Supports date + time. Works for TODO list and calendar."),
+                  value: withReminder,
+                  onChanged: (v) => setLocal(() => withReminder = v),
+                ),
+                if (withReminder) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final picked = await showDatePicker(
+                              context: ctx,
+                              initialDate: reminderDay,
+                              firstDate: DateTime(2020, 1, 1),
+                              lastDate: DateTime(2100, 12, 31),
+                            );
+                            if (picked == null) return;
+                            setLocal(() => reminderDay = _normalizeDay(picked));
+                          },
+                          icon: const Icon(Icons.calendar_month_outlined,
+                              size: 16),
+                          label:
+                              Text("Reminder date ${_dateLocal(reminderDay)}"),
+                        ),
+                      ),
+                      const SizedBox(width: RecorderTokens.space2),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final picked = await showTimePicker(
+                              context: ctx,
+                              initialTime: reminderTime,
+                            );
+                            if (picked == null) return;
+                            setLocal(() => reminderTime = picked);
+                          },
+                          icon: const Icon(Icons.alarm_outlined, size: 16),
+                          label: Text(
+                            "Reminder ${reminderTime.hour.toString().padLeft(2, "0")}:${reminderTime.minute.toString().padLeft(2, "0")}",
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: RecorderTokens.space1),
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text("Done"),
@@ -1040,6 +1167,17 @@ class ReportsScreenState extends State<ReportsScreen> {
       startTs = startLocal.toUtc().toIso8601String();
       endTs = endLocal.toUtc().toIso8601String();
     }
+    String? reminderTs;
+    if (withReminder) {
+      final reminderLocal = DateTime(
+        reminderDay.year,
+        reminderDay.month,
+        reminderDay.day,
+        reminderTime.hour,
+        reminderTime.minute,
+      );
+      reminderTs = reminderLocal.toUtc().toIso8601String();
+    }
 
     setState(() => _todoBusy = true);
     try {
@@ -1050,6 +1188,7 @@ class ReportsScreenState extends State<ReportsScreen> {
         dueDate: _dateLocal(day),
         startTs: startTs ?? "",
         endTs: endTs ?? "",
+        reminderTs: reminderTs ?? "",
       );
       await refresh(silent: true);
     } catch (e) {
@@ -1097,8 +1236,12 @@ class ReportsScreenState extends State<ReportsScreen> {
     final startMinute = _todoStartMinute(todo);
     final hh = (startMinute ~/ 60).toString().padLeft(2, "0");
     final mm = (startMinute % 60).toString().padLeft(2, "0");
-    final subtitle =
-        hasSchedule ? "$hh:$mm · ${_todoDurationMinutes(todo)}m" : "All-day";
+    final reminder = _todoReminderLocal(todo);
+    final reminderText =
+        reminder == null ? "No reminder" : "🔔 ${_todoReminderLabel(todo)}";
+    final subtitle = hasSchedule
+        ? "$hh:$mm · ${_todoDurationMinutes(todo)}m · $reminderText"
+        : "All-day · $reminderText";
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -1165,194 +1308,6 @@ class ReportsScreenState extends State<ReportsScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _todoDayView(BuildContext context, DateTime day) {
-    final todos = _todosForDay(day);
-    if (todos.isEmpty) {
-      return Center(
-        child: Text(
-          "No TODO on ${_dateLocal(day)}",
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      );
-    }
-    final scheduled = todos.where(_todoHasSchedule).toList();
-    final unscheduled = todos.where((t) => !_todoHasSchedule(t)).toList();
-    const leftAxisWidth = 54.0;
-    const hourHeight = 54.0;
-    const headerHeight = 8.0;
-    final gridHeight = 24 * hourHeight;
-    final layouts = _buildScheduledLayoutsForDay(0, scheduled);
-    final isToday = _isSameDay(day, DateTime.now());
-    final now = DateTime.now();
-    final nowMinute = now.hour * 60 + now.minute + now.second / 60.0;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (scheduled.isNotEmpty)
-          Expanded(
-            child: SingleChildScrollView(
-              child: SizedBox(
-                height: headerHeight + gridHeight,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final dayWidth = (constraints.maxWidth - leftAxisWidth)
-                        .clamp(180.0, 9999.0);
-                    return Stack(
-                      children: [
-                        for (var slot = 0; slot <= 48; slot++)
-                          Positioned(
-                            left: leftAxisWidth,
-                            right: 0,
-                            top: headerHeight + slot * (hourHeight / 2),
-                            child: Divider(
-                              height: 1,
-                              thickness: slot % 2 == 0 ? 1 : 0.7,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .outline
-                                  .withValues(
-                                      alpha: slot % 2 == 0 ? 0.12 : 0.07),
-                            ),
-                          ),
-                        for (var h = 0; h < 24; h++)
-                          Positioned(
-                            left: 0,
-                            top: headerHeight + h * hourHeight - 8,
-                            width: leftAxisWidth - 6,
-                            child: Text(
-                              _todoHourLabel(h),
-                              textAlign: TextAlign.right,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelSmall
-                                  ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                            ),
-                          ),
-                        for (final layout in layouts)
-                          Builder(
-                            builder: (context) {
-                              final top = headerHeight +
-                                  (layout.startMinute / 60.0) * hourHeight;
-                              final height =
-                                  ((layout.endMinute - layout.startMinute) /
-                                          60.0) *
-                                      hourHeight;
-                              final columns = layout.columnCount <= 0
-                                  ? 1
-                                  : layout.columnCount;
-                              final innerWidth =
-                                  (dayWidth - 8).clamp(40.0, 9999.0);
-                              final rawColumnWidth = innerWidth / columns;
-                              final eventWidth =
-                                  (rawColumnWidth - 4).clamp(36.0, innerWidth);
-                              final left = leftAxisWidth +
-                                  4 +
-                                  rawColumnWidth * layout.columnIndex;
-                              final todo = layout.todo;
-                              return Positioned(
-                                left: left,
-                                top: top,
-                                width: eventWidth.toDouble(),
-                                height: height.clamp(26, 9999),
-                                child: InkWell(
-                                  onTap: _todoBusy
-                                      ? null
-                                      : () => _openTodoEditor(todo: todo),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: todo.done
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .surfaceContainerHighest
-                                          : Theme.of(context)
-                                              .colorScheme
-                                              .primaryContainer,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .outline
-                                            .withValues(alpha: 0.18),
-                                      ),
-                                    ),
-                                    padding: const EdgeInsets.all(6),
-                                    child: Text(
-                                      todo.content,
-                                      maxLines: 3,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(
-                                            decoration: todo.done
-                                                ? TextDecoration.lineThrough
-                                                : TextDecoration.none,
-                                          ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        if (isToday)
-                          Positioned(
-                            left: leftAxisWidth + 2,
-                            right: 2,
-                            top: headerHeight + (nowMinute / 60.0) * hourHeight,
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 7,
-                                  height: 7,
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context).colorScheme.error,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Container(
-                                    height: 1.4,
-                                    color: Theme.of(context).colorScheme.error,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-          )
-        else
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(vertical: RecorderTokens.space2),
-            child: Text(
-              "No scheduled TODO",
-              style: Theme.of(context).textTheme.labelMedium,
-            ),
-          ),
-        if (unscheduled.isNotEmpty) ...[
-          const SizedBox(height: RecorderTokens.space2),
-          Text("Unscheduled", style: Theme.of(context).textTheme.labelMedium),
-          const SizedBox(height: 6),
-          Column(
-            children: [
-              for (final t in unscheduled) _todoChip(context, t),
-            ],
-          ),
-        ],
-      ],
     );
   }
 
@@ -1462,7 +1417,6 @@ class ReportsScreenState extends State<ReportsScreen> {
                                   _dragDurationMinutes = null;
                                   _dragStartGlobalPosition = null;
                                   _todoAnchorDay = days[i];
-                                  _todoView = _TodoCalendarView.day;
                                 }),
                                 child: Center(
                                   child: Container(
@@ -1492,6 +1446,31 @@ class ReportsScreenState extends State<ReportsScreen> {
                                     ),
                                   ),
                                 ),
+                              ),
+                            ),
+                          for (var i = 0; i < 7; i++)
+                            Positioned(
+                              left: leftAxisWidth + i * dayWidth,
+                              top: headerHeight,
+                              width: dayWidth,
+                              height: gridHeight,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onTapUp: _todoBusy
+                                    ? null
+                                    : (details) {
+                                        final minute = _snapToQuarterHour(
+                                          ((details.localPosition.dy /
+                                                      hourHeight) *
+                                                  60)
+                                              .round(),
+                                        ).clamp(0, 23 * 60 + 45);
+                                        _openTodoEditor(
+                                          suggestedDay: days[i],
+                                          suggestedStartMinute: minute,
+                                          forceSchedule: true,
+                                        );
+                                      },
                               ),
                             ),
                           for (var h = 0; h < 24; h++)
@@ -1747,7 +1726,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                 _dragDurationMinutes = null;
                 _dragStartGlobalPosition = null;
                 _todoAnchorDay = day;
-                _todoView = _TodoCalendarView.day;
+                _todoCalendarView = _TodoCalendarView.week;
               }),
               child: Container(
                 decoration: BoxDecoration(
@@ -1818,29 +1797,83 @@ class ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Widget _todoPlannerSection(BuildContext context) {
+  Widget _todoListDimension(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ExpansionTile(
-      tilePadding: EdgeInsets.zero,
-      childrenPadding: EdgeInsets.zero,
-      initiallyExpanded: true,
-      title: const Text("TODO planner"),
-      subtitle: Text(_todoSummaryText()),
+    final sorted = _sortTodos(_todos);
+    final open = sorted.where((t) => !t.done).toList();
+    final done = sorted.where((t) => t.done).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Row(
+          children: [
+            FilledButton.icon(
+              onPressed: _todoBusy ? null : () => _openTodoEditor(),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text("Add TODO"),
+            ),
+            const SizedBox(width: RecorderTokens.space2),
+            OutlinedButton.icon(
+              onPressed: _todoBusy
+                  ? null
+                  : () => _openTodoEditor(
+                        suggestedDay: _normalizeDay(DateTime.now()),
+                        suggestedStartMinute: 9 * 60,
+                        forceSchedule: true,
+                      ),
+              icon: const Icon(Icons.schedule_outlined, size: 18),
+              label: const Text("Add with time"),
+            ),
+          ],
+        ),
         const SizedBox(height: RecorderTokens.space2),
+        if (open.isEmpty && done.isEmpty)
+          Text(
+            "No TODO yet. You can add plain tasks or tasks with date/time + reminder.",
+            style: Theme.of(context)
+                .textTheme
+                .labelMedium
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          )
+        else ...[
+          if (open.isNotEmpty) ...[
+            Text("Open", style: Theme.of(context).textTheme.labelLarge),
+            const SizedBox(height: 6),
+            for (final todo in open) _todoChip(context, todo),
+          ],
+          if (done.isNotEmpty) ...[
+            const SizedBox(height: RecorderTokens.space2),
+            Text(
+              "Done (${done.length})",
+              style: Theme.of(context)
+                  .textTheme
+                  .labelLarge
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 6),
+            for (final todo in done.take(20)) _todoChip(context, todo),
+          ],
+        ],
+      ],
+    );
+  }
+
+  Widget _todoCalendarDimension(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Row(
           children: [
             Expanded(
               child: SegmentedButton<_TodoCalendarView>(
                 segments: const [
                   ButtonSegment(
-                      value: _TodoCalendarView.day, label: Text("Day")),
-                  ButtonSegment(
                       value: _TodoCalendarView.week, label: Text("Week")),
                   ButtonSegment(
                       value: _TodoCalendarView.month, label: Text("Month")),
                 ],
-                selected: {_todoView},
+                selected: {_todoCalendarView},
                 showSelectedIcon: false,
                 onSelectionChanged: (s) => setState(() {
                   _dragTodoId = null;
@@ -1850,7 +1883,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                   _dragCurrentStartMinute = null;
                   _dragDurationMinutes = null;
                   _dragStartGlobalPosition = null;
-                  _todoView = s.first;
+                  _todoCalendarView = s.first;
                 }),
               ),
             ),
@@ -1862,12 +1895,12 @@ class ReportsScreenState extends State<ReportsScreen> {
             ),
           ],
         ),
-        if (_todoView == _TodoCalendarView.week) ...[
+        if (_todoCalendarView == _TodoCalendarView.week) ...[
           const SizedBox(height: 6),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              "Tip: drag a scheduled block to reschedule (snap: 15m).",
+              "Tip: click week time blocks to create scheduled TODO; drag scheduled blocks to reschedule (15m snap).",
               style: Theme.of(context)
                   .textTheme
                   .labelSmall
@@ -1914,40 +1947,48 @@ class ReportsScreenState extends State<ReportsScreen> {
           ],
         ),
         const SizedBox(height: RecorderTokens.space2),
-        if (_todoView == _TodoCalendarView.day)
-          SizedBox(height: 420, child: _todoDayView(context, _todoAnchorDay))
-        else if (_todoView == _TodoCalendarView.week)
+        if (_todoCalendarView == _TodoCalendarView.week)
           SizedBox(height: 460, child: _todoWeekView(context, _todoAnchorDay))
         else
           _todoMonthView(context, _todoAnchorDay),
+      ],
+    );
+  }
+
+  Widget _todoPlannerSection(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: EdgeInsets.zero,
+      initiallyExpanded: true,
+      title: const Text("Planner"),
+      subtitle: Text(_todoSummaryText()),
+      children: [
         const SizedBox(height: RecorderTokens.space2),
-        if (_todos.isNotEmpty)
-          Wrap(
-            spacing: RecorderTokens.space2,
-            runSpacing: RecorderTokens.space2,
-            children: [
-              for (final todo
-                  in _sortTodos(_todos).where((t) => !t.done).take(6))
-                ActionChip(
-                  avatar: const Icon(Icons.task_alt_outlined, size: 16),
-                  label: Text(
-                    todo.content,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  onPressed:
-                      _todoBusy ? null : () => _openTodoEditor(todo: todo),
-                ),
-            ],
-          )
+        SegmentedButton<_PlannerDimension>(
+          segments: const [
+            ButtonSegment(value: _PlannerDimension.todo, label: Text("TODO")),
+            ButtonSegment(
+                value: _PlannerDimension.calendar, label: Text("Calendar")),
+          ],
+          selected: {_plannerDimension},
+          showSelectedIcon: false,
+          onSelectionChanged: (s) =>
+              setState(() => _plannerDimension = s.first),
+        ),
+        const SizedBox(height: RecorderTokens.space2),
+        if (_plannerDimension == _PlannerDimension.todo)
+          _todoListDimension(context)
         else
-          Text(
-            "Add TODO items with date/time, then reports will focus on guidance instead of activity流水账.",
-            style: Theme.of(context)
-                .textTheme
-                .labelMedium
-                ?.copyWith(color: scheme.onSurfaceVariant),
-          ),
+          _todoCalendarDimension(context),
+        const SizedBox(height: RecorderTokens.space2),
+        Text(
+          "Both TODO and Calendar dimensions support optional reminders.",
+          style: Theme.of(context)
+              .textTheme
+              .labelSmall
+              ?.copyWith(color: scheme.onSurfaceVariant),
+        ),
       ],
     );
   }
@@ -2457,7 +2498,7 @@ class ReportsScreenState extends State<ReportsScreen> {
             Text("Planner", style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: RecorderTokens.space1),
             Text(
-              "Manage your TODOs in day / week / month calendar views.",
+              "Planner has two dimensions: TODO list and calendar (week/month).",
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: RecorderTokens.space3),

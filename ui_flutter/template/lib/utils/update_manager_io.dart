@@ -404,6 +404,36 @@ function Stop-ByName {
   }
 }
 
+function Stop-ByImage {
+  param([Parameter(Mandatory=$true)][string[]]$Images)
+  foreach ($img in $Images) {
+    try { & taskkill /IM $img /F /T | Out-Null } catch {}
+  }
+}
+
+function Stop-ByPathPrefix {
+  param([string]$Dir)
+  if ([string]::IsNullOrWhiteSpace($Dir)) { return }
+  $prefix = ""
+  try {
+    $prefix = [System.IO.Path]::GetFullPath($Dir).TrimEnd('\') + "\"
+  } catch {
+    $prefix = $Dir.TrimEnd('\') + "\"
+  }
+  try {
+    $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
+    foreach ($p in $procs) {
+      $ep = "$($p.ExecutablePath)"
+      if ([string]::IsNullOrWhiteSpace($ep)) { continue }
+      $full = $ep
+      try { $full = [System.IO.Path]::GetFullPath($ep) } catch {}
+      if ($full.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+      }
+    }
+  } catch {}
+}
+
 function Wait-NotRunning {
   param([Parameter(Mandatory=$true)][string[]]$Names, [int]$TimeoutSeconds = 12)
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -413,6 +443,38 @@ function Wait-NotRunning {
       try { if (Get-Process $n -ErrorAction SilentlyContinue) { $alive += $n } } catch {}
     }
     if ($alive.Count -eq 0) { return }
+    Start-Sleep -Milliseconds 200
+  }
+}
+
+function Wait-NotRunningFromDir {
+  param([string]$Dir, [int]$TimeoutSeconds = 12)
+  if ([string]::IsNullOrWhiteSpace($Dir)) { return }
+  $prefix = ""
+  try {
+    $prefix = [System.IO.Path]::GetFullPath($Dir).TrimEnd('\') + "\"
+  } catch {
+    $prefix = $Dir.TrimEnd('\') + "\"
+  }
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    $alive = $false
+    try {
+      $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
+      foreach ($p in $procs) {
+        $ep = "$($p.ExecutablePath)"
+        if ([string]::IsNullOrWhiteSpace($ep)) { continue }
+        $full = $ep
+        try { $full = [System.IO.Path]::GetFullPath($ep) } catch {}
+        if ($full.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+          $alive = $true
+          break
+        }
+      }
+    } catch {
+      return
+    }
+    if (-not $alive) { return }
     Start-Sleep -Milliseconds 200
   }
 }
@@ -472,57 +534,102 @@ function Resolve-UiExe {
   return ""
 }
 
+function Start-App {
+  param(
+    [Parameter(Mandatory=$true)][string]$Exe,
+    [string]$Args = "",
+    [string]$Dir = ""
+  )
+  if ([string]::IsNullOrWhiteSpace($Exe) -or !(Test-Path $Exe)) { return $false }
+  try {
+    if ([string]::IsNullOrWhiteSpace($Dir)) {
+      $Dir = Split-Path -Parent $Exe
+    }
+    if ([string]::IsNullOrWhiteSpace($Args)) {
+      Start-Process -FilePath $Exe -WorkingDirectory $Dir | Out-Null
+    } else {
+      Start-Process -FilePath $Exe -ArgumentList $Args -WorkingDirectory $Dir | Out-Null
+    }
+    return $true
+  } catch {
+    Write-Log "start app failed ($Exe): $($_.Exception.Message)"
+    return $false
+  }
+}
+
 Write-Log "updater started setup=$SetupPath installDir=$InstallDir appId=$AppId uiPid=$UiPid"
 
-if (!(Test-Path $SetupPath)) { throw "setup_not_found" }
-$targetInstallDir = Resolve-InstallDir -Fallback $InstallDir
-if ([string]::IsNullOrWhiteSpace($targetInstallDir)) { throw "install_dir_missing" }
-Write-Log "resolved install dir: $targetInstallDir"
-
-$names = @("RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector")
-Stop-ByName -Names $names
-try { if ($UiPid -gt 0) { Wait-Process -Id $UiPid -Timeout 15 } } catch {}
-Wait-NotRunning -Names $names -TimeoutSeconds 10
-
-$setupArgs = @(
-  "/VERYSILENT",
-  "/SUPPRESSMSGBOXES",
-  "/NORESTART",
-  "/SP-",
-  "/CLOSEAPPLICATIONS",
-  "/FORCECLOSEAPPLICATIONS"
-)
-if (-not [string]::IsNullOrWhiteSpace($targetInstallDir)) {
-  $setupArgs += "/DIR=""$targetInstallDir"""
-}
-
-Write-Log "running installer: $SetupPath"
-$setupProc = Start-Process -FilePath $SetupPath -ArgumentList $setupArgs -PassThru -Wait
-if ($null -eq $setupProc) { throw "setup_start_failed" }
-if ($setupProc.ExitCode -ne 0) { throw "setup_failed_exit_$($setupProc.ExitCode)" }
-Write-Log "installer finished exit=$($setupProc.ExitCode)"
-
-$finalInstallDir = Resolve-InstallDir -Fallback $targetInstallDir
-if ([string]::IsNullOrWhiteSpace($finalInstallDir)) { $finalInstallDir = $targetInstallDir }
-Write-Log "final install dir: $finalInstallDir"
-
-$exe = Resolve-UiExe -Dir $finalInstallDir -Preferred $PreferredExeName
-if ([string]::IsNullOrWhiteSpace($exe) -or !(Test-Path $exe)) {
-  throw "installed_exe_not_found"
-}
-Write-Log "restart exe: $exe"
+$targetInstallDir = ""
+$fallbackExe = ""
 
 try {
-  if ([string]::IsNullOrWhiteSpace($StartArgs)) {
-    Start-Process -FilePath $exe -WorkingDirectory $finalInstallDir | Out-Null
-  } else {
-    Start-Process -FilePath $exe -ArgumentList $StartArgs -WorkingDirectory $finalInstallDir | Out-Null
+  if (!(Test-Path $SetupPath)) { throw "setup_not_found" }
+  $targetInstallDir = Resolve-InstallDir -Fallback $InstallDir
+  if ([string]::IsNullOrWhiteSpace($targetInstallDir)) { throw "install_dir_missing" }
+  Write-Log "resolved install dir: $targetInstallDir"
+
+  $fallbackExe = Resolve-UiExe -Dir $targetInstallDir -Preferred $PreferredExeName
+  if (-not [string]::IsNullOrWhiteSpace($fallbackExe)) {
+    Write-Log "fallback exe: $fallbackExe"
   }
+
+  $names = @("RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector")
+  $images = @("RecorderPhone.exe", "recorderphone_ui.exe", "recorder_core.exe", "windows_collector.exe")
+  for ($i = 0; $i -lt 3; $i++) {
+    Stop-ByName -Names $names
+    Stop-ByImage -Images $images
+    Stop-ByPathPrefix -Dir $targetInstallDir
+    try { if ($UiPid -gt 0) { Wait-Process -Id $UiPid -Timeout 6 } } catch {}
+    Wait-NotRunning -Names $names -TimeoutSeconds 4
+    Wait-NotRunningFromDir -Dir $targetInstallDir -TimeoutSeconds 4
+    Start-Sleep -Milliseconds 200
+  }
+
+  $setupLog = Join-Path $env:TEMP "RecorderPhone-updater-setup.log"
+  $setupArgs = @(
+    "/VERYSILENT",
+    "/SUPPRESSMSGBOXES",
+    "/NORESTART",
+    "/SP-",
+    "/CLOSEAPPLICATIONS",
+    "/FORCECLOSEAPPLICATIONS",
+    "/NORESTARTAPPLICATIONS",
+    "/LOG=""$setupLog"""
+  )
+  if (-not [string]::IsNullOrWhiteSpace($targetInstallDir)) {
+    $setupArgs += "/DIR=""$targetInstallDir"""
+  }
+
+  Write-Log "running installer: $SetupPath"
+  $setupProc = Start-Process -FilePath $SetupPath -ArgumentList $setupArgs -PassThru -Wait
+  if ($null -eq $setupProc) { throw "setup_start_failed" }
+  if ($setupProc.ExitCode -ne 0) { throw "setup_failed_exit_$($setupProc.ExitCode)" }
+  Write-Log "installer finished exit=$($setupProc.ExitCode)"
+
+  $finalInstallDir = Resolve-InstallDir -Fallback $targetInstallDir
+  if ([string]::IsNullOrWhiteSpace($finalInstallDir)) { $finalInstallDir = $targetInstallDir }
+  Write-Log "final install dir: $finalInstallDir"
+
+  $exe = Resolve-UiExe -Dir $finalInstallDir -Preferred $PreferredExeName
+  if ([string]::IsNullOrWhiteSpace($exe) -or !(Test-Path $exe)) {
+    throw "installed_exe_not_found"
+  }
+  Write-Log "restart exe: $exe"
+
+  $started = Start-App -Exe $exe -Args $StartArgs -Dir $finalInstallDir
+  if (-not $started) { throw "restart_failed" }
+  Write-Log "update completed"
 } catch {
-  Write-Log "restart failed: $($_.Exception.Message)"
-  throw "restart_failed: $($_.Exception.Message)"
+  Write-Log "update failed: $($_.Exception.Message)"
+  if (-not [string]::IsNullOrWhiteSpace($fallbackExe) -and (Test-Path $fallbackExe)) {
+    $fallbackDir = ""
+    try { $fallbackDir = Split-Path -Parent $fallbackExe } catch {}
+    if (Start-App -Exe $fallbackExe -Args $StartArgs -Dir $fallbackDir) {
+      Write-Log "fallback restart launched: $fallbackExe"
+    }
+  }
+  throw
 }
-Write-Log "update completed"
 ''';
   }
 
@@ -566,8 +673,9 @@ Write-Log "update completed"
 
     try {
       final setupAsset = await _downloadToTempFile(url);
-      final scriptFile =
-          File(_join(Directory.systemTemp.path, "RecorderPhone-update.ps1"));
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final scriptFile = File(
+          _join(Directory.systemTemp.path, "RecorderPhone-update-$stamp.ps1"));
       await scriptFile.writeAsString(_updaterScript(), flush: true);
 
       final preferredExeName = "RecorderPhone.exe";
@@ -595,12 +703,37 @@ Write-Log "update completed"
         startArgs,
       ];
 
-      await Process.start(
+      final updater = await Process.start(
         "powershell.exe",
         args,
         runInShell: false,
-        mode: ProcessStartMode.detached,
+        workingDirectory: Directory.systemTemp.path,
+        mode: ProcessStartMode.detachedWithStdio,
       );
+
+      final earlyExit = await updater.exitCode.timeout(
+        const Duration(milliseconds: 1200),
+        onTimeout: () => -2147483648,
+      );
+      if (earlyExit != -2147483648) {
+        String out = "";
+        String err = "";
+        try {
+          out = (await utf8.decodeStream(updater.stdout)).trim();
+        } catch (_) {
+          out = "";
+        }
+        try {
+          err = (await utf8.decodeStream(updater.stderr)).trim();
+        } catch (_) {
+          err = "";
+        }
+        final msg = [out, err].where((s) => s.isNotEmpty).join(" | ");
+        final detail = msg.isEmpty
+            ? "updater_exited_$earlyExit"
+            : "updater_exited_$earlyExit: $msg";
+        return UpdateInstallResult(ok: false, error: detail);
+      }
 
       return const UpdateInstallResult(ok: true);
     } catch (e) {

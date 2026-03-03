@@ -1853,8 +1853,12 @@ fn normalize_todo_ts(raw: Option<&str>, err: &'static str) -> Result<Option<Stri
 fn validate_todo_schedule(
     start_ts: Option<&str>,
     end_ts: Option<&str>,
+    reminder_ts: Option<&str>,
 ) -> Result<(), &'static str> {
     if start_ts.is_none() && end_ts.is_none() {
+        if let Some(rem) = reminder_ts {
+            let _ = OffsetDateTime::parse(rem, &Rfc3339).map_err(|_| "invalid_reminder_ts")?;
+        }
         return Ok(());
     }
     let Some(st_raw) = start_ts else {
@@ -1867,6 +1871,12 @@ fn validate_todo_schedule(
     let en = OffsetDateTime::parse(en_raw, &Rfc3339).map_err(|_| "invalid_end_ts")?;
     if en <= st {
         return Err("invalid_schedule_range");
+    }
+    if let Some(rem_raw) = reminder_ts {
+        let rem = OffsetDateTime::parse(rem_raw, &Rfc3339).map_err(|_| "invalid_reminder_ts")?;
+        if rem > en {
+            return Err("invalid_reminder_ts");
+        }
     }
     Ok(())
 }
@@ -1985,7 +1995,28 @@ async fn post_report_todo(
         } else {
             existing.end_ts.clone()
         };
-        if let Err(code) = validate_todo_schedule(start_ts.as_deref(), end_ts.as_deref()) {
+        let reminder_ts = if let Some(v) = req.reminder_ts.as_deref() {
+            match normalize_todo_ts(Some(v), "invalid_reminder_ts") {
+                Ok(x) => x,
+                Err(code) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrResponse {
+                            ok: false,
+                            error: code,
+                        }),
+                    )
+                        .into_response();
+                }
+            }
+        } else {
+            existing.reminder_ts.clone()
+        };
+        if let Err(code) = validate_todo_schedule(
+            start_ts.as_deref(),
+            end_ts.as_deref(),
+            reminder_ts.as_deref(),
+        ) {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(ErrResponse {
@@ -2004,6 +2035,7 @@ async fn post_report_todo(
             due_date.as_deref(),
             start_ts.as_deref(),
             end_ts.as_deref(),
+            reminder_ts.as_deref(),
             done_at.as_deref(),
             &now,
         ) {
@@ -2097,7 +2129,25 @@ async fn post_report_todo(
                     .into_response();
             }
         };
-        if let Err(code) = validate_todo_schedule(start_ts.as_deref(), end_ts.as_deref()) {
+        let reminder_ts = match normalize_todo_ts(req.reminder_ts.as_deref(), "invalid_reminder_ts")
+        {
+            Ok(x) => x,
+            Err(code) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: code,
+                    }),
+                )
+                    .into_response();
+            }
+        };
+        if let Err(code) = validate_todo_schedule(
+            start_ts.as_deref(),
+            end_ts.as_deref(),
+            reminder_ts.as_deref(),
+        ) {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(ErrResponse {
@@ -2115,6 +2165,7 @@ async fn post_report_todo(
             due_date.as_deref(),
             start_ts.as_deref(),
             end_ts.as_deref(),
+            reminder_ts.as_deref(),
             done_at,
             &now,
         ) {
@@ -3096,6 +3147,8 @@ struct ReportTodo {
     start_ts: Option<String>, // RFC3339
     #[serde(skip_serializing_if = "Option::is_none")]
     end_ts: Option<String>, // RFC3339
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reminder_ts: Option<String>, // RFC3339
     created_at: String,
     updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3116,6 +3169,8 @@ struct ReportTodoUpsert {
     start_ts: Option<String>,
     #[serde(default)]
     end_ts: Option<String>,
+    #[serde(default)]
+    reminder_ts: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -4363,6 +4418,7 @@ async fn generate_daily_report(
               "due_date": t.due_date,
               "start_ts": t.start_ts,
               "end_ts": t.end_ts,
+              "reminder_ts": t.reminder_ts,
               "created_at": t.created_at,
               "updated_at": t.updated_at,
             })
@@ -4379,6 +4435,7 @@ async fn generate_daily_report(
               "due_date": t.due_date,
               "start_ts": t.start_ts,
               "end_ts": t.end_ts,
+              "reminder_ts": t.reminder_ts,
               "done_at": t.done_at,
               "updated_at": t.updated_at,
             })
@@ -4802,6 +4859,7 @@ async fn generate_weekly_report(
               "due_date": t.due_date,
               "start_ts": t.start_ts,
               "end_ts": t.end_ts,
+              "reminder_ts": t.reminder_ts,
               "created_at": t.created_at,
               "updated_at": t.updated_at,
             })
@@ -4818,6 +4876,7 @@ async fn generate_weekly_report(
               "due_date": t.due_date,
               "start_ts": t.start_ts,
               "end_ts": t.end_ts,
+              "reminder_ts": t.reminder_ts,
               "done_at": t.done_at,
               "updated_at": t.updated_at,
             })
@@ -5153,6 +5212,7 @@ CREATE TABLE IF NOT EXISTS report_todos (
   due_date TEXT,
   start_ts TEXT,
   end_ts TEXT,
+  reminder_ts TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   done_at TEXT
@@ -5254,6 +5314,13 @@ fn ensure_report_todos_columns(conn: &Connection) -> rusqlite::Result<()> {
     if !cols.contains("end_ts") {
         conn.execute("ALTER TABLE report_todos ADD COLUMN end_ts TEXT", [])?;
     }
+    if !cols.contains("reminder_ts") {
+        conn.execute("ALTER TABLE report_todos ADD COLUMN reminder_ts TEXT", [])?;
+    }
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_report_todos_reminder_ts ON report_todos(reminder_ts, done, updated_at DESC, id DESC)",
+        [],
+    )?;
 
     Ok(())
 }
@@ -5678,6 +5745,7 @@ SELECT
   due_date,
   start_ts,
   end_ts,
+  reminder_ts,
   created_at,
   updated_at,
   done_at
@@ -5695,9 +5763,10 @@ LIMIT ?1
             due_date: row.get(3)?,
             start_ts: row.get(4)?,
             end_ts: row.get(5)?,
-            created_at: row.get(6)?,
-            updated_at: row.get(7)?,
-            done_at: row.get(8)?,
+            reminder_ts: row.get(6)?,
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
+            done_at: row.get(9)?,
         })
     })?;
 
@@ -5718,6 +5787,7 @@ SELECT
   due_date,
   start_ts,
   end_ts,
+  reminder_ts,
   created_at,
   updated_at,
   done_at
@@ -5735,9 +5805,10 @@ LIMIT 1
             due_date: row.get(3)?,
             start_ts: row.get(4)?,
             end_ts: row.get(5)?,
-            created_at: row.get(6)?,
-            updated_at: row.get(7)?,
-            done_at: row.get(8)?,
+            reminder_ts: row.get(6)?,
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
+            done_at: row.get(9)?,
         })
     }) {
         Ok(v) => Ok(Some(v)),
@@ -5753,17 +5824,19 @@ fn insert_report_todo(
     due_date: Option<&str>,
     start_ts: Option<&str>,
     end_ts: Option<&str>,
+    reminder_ts: Option<&str>,
     done_at: Option<&str>,
     now: &str,
 ) -> rusqlite::Result<i64> {
     conn.execute(
-        "INSERT INTO report_todos (content, done, due_date, start_ts, end_ts, created_at, updated_at, done_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO report_todos (content, done, due_date, start_ts, end_ts, reminder_ts, created_at, updated_at, done_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         (
             content,
             if done { 1i64 } else { 0i64 },
             due_date,
             start_ts,
             end_ts,
+            reminder_ts,
             now,
             now,
             done_at,
@@ -5780,17 +5853,19 @@ fn update_report_todo(
     due_date: Option<&str>,
     start_ts: Option<&str>,
     end_ts: Option<&str>,
+    reminder_ts: Option<&str>,
     done_at: Option<&str>,
     now: &str,
 ) -> rusqlite::Result<usize> {
     conn.execute(
-        "UPDATE report_todos SET content = ?1, done = ?2, due_date = ?3, start_ts = ?4, end_ts = ?5, done_at = ?6, updated_at = ?7 WHERE id = ?8",
+        "UPDATE report_todos SET content = ?1, done = ?2, due_date = ?3, start_ts = ?4, end_ts = ?5, reminder_ts = ?6, done_at = ?7, updated_at = ?8 WHERE id = ?9",
         (
             content,
             if done { 1i64 } else { 0i64 },
             due_date,
             start_ts,
             end_ts,
+            reminder_ts,
             done_at,
             now,
             id,

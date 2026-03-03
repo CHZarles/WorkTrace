@@ -291,7 +291,8 @@ async fn windows_main(args: Args) -> anyhow::Result<()> {
             }
         }
 
-        if args.review_notify && (args.review_notify_when_idle || idle_s < args.idle_cutoff_seconds) {
+        if args.review_notify && (args.review_notify_when_idle || idle_s < args.idle_cutoff_seconds)
+        {
             let check_due = last_review_check.elapsed()
                 >= Duration::from_secs(args.review_notify_check_seconds);
             if check_due {
@@ -329,8 +330,8 @@ impl Drop for MutexGuard {
 
 #[cfg(windows)]
 fn ensure_single_instance_mutex() -> anyhow::Result<MutexGuard> {
-    use std::iter;
     use std::ffi::c_void;
+    use std::iter;
     use windows_sys::Win32::Foundation::{GetLastError, BOOL, ERROR_ALREADY_EXISTS, HANDLE};
 
     // Use a direct kernel32 binding instead of relying on windows-sys re-exports.

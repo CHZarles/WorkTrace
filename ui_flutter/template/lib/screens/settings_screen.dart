@@ -293,6 +293,12 @@ class SettingsScreenState extends State<SettingsScreen> {
       _updatesError = null;
     });
     try {
+      final agent = DesktopAgent.instance;
+      if (agent.isAvailable) {
+        await agent.stop(killAllByName: true);
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+
       final res = await mgr.installUpdate(latest: latest, installAssetUrl: url);
       if (!mounted) return;
       if (!res.ok) {

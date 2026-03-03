@@ -513,6 +513,7 @@ class CoreClient {
     String? dueDate,
     String? startTs,
     String? endTs,
+    String? reminderTs,
   }) async {
     final body = <String, dynamic>{};
     if (id != null) body["id"] = id;
@@ -521,6 +522,7 @@ class CoreClient {
     if (dueDate != null) body["due_date"] = dueDate;
     if (startTs != null) body["start_ts"] = startTs;
     if (endTs != null) body["end_ts"] = endTs;
+    if (reminderTs != null) body["reminder_ts"] = reminderTs;
 
     final res = await _http.post(
       _u("/reports/todos"),
@@ -1156,6 +1158,7 @@ class ReportTodo {
     required this.dueDate,
     required this.startTs,
     required this.endTs,
+    required this.reminderTs,
     required this.createdAt,
     required this.updatedAt,
     required this.doneAt,
@@ -1167,12 +1170,14 @@ class ReportTodo {
   final String? dueDate; // YYYY-MM-DD
   final String? startTs; // RFC3339
   final String? endTs; // RFC3339
+  final String? reminderTs; // RFC3339
   final String createdAt;
   final String updatedAt;
   final String? doneAt;
 
   DateTime? _startUtc;
   DateTime? _endUtc;
+  DateTime? _reminderUtc;
 
   DateTime? get startUtc {
     return _startUtc ??= DateTime.tryParse(startTs ?? "")?.toUtc();
@@ -1180,6 +1185,10 @@ class ReportTodo {
 
   DateTime? get endUtc {
     return _endUtc ??= DateTime.tryParse(endTs ?? "")?.toUtc();
+  }
+
+  DateTime? get reminderUtc {
+    return _reminderUtc ??= DateTime.tryParse(reminderTs ?? "")?.toUtc();
   }
 
   DateTime? get startLocal {
@@ -1194,6 +1203,12 @@ class ReportTodo {
     return end.toLocal();
   }
 
+  DateTime? get reminderLocal {
+    final reminder = reminderUtc;
+    if (reminder == null) return null;
+    return reminder.toLocal();
+  }
+
   factory ReportTodo.fromJson(Map<String, dynamic> json) {
     return ReportTodo(
       id: (json["id"] as int?) ?? 0,
@@ -1202,6 +1217,7 @@ class ReportTodo {
       dueDate: json["due_date"] as String?,
       startTs: json["start_ts"] as String?,
       endTs: json["end_ts"] as String?,
+      reminderTs: json["reminder_ts"] as String?,
       createdAt: (json["created_at"] as String?) ?? "",
       updatedAt: (json["updated_at"] as String?) ?? "",
       doneAt: json["done_at"] as String?,
