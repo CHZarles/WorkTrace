@@ -36,45 +36,56 @@ const REVIEW_NOTIFY_REPEAT_MINUTES_MAX: i64 = 24 * 60;
 const REVIEW_LAST_BLOCK_END_GRACE_SECONDS: i64 = 30;
 
 const DEFAULT_DAILY_PROMPT: &str = r#"
-你是严格的个人复盘助手。只能使用我提供的 JSON 数据，不要猜测/脑补；缺失信息用 N/A。
-只输出 Markdown（不要代码围栏），不要输出任何额外解释。
+你是严格的“TODO 驱动”复盘助手。只能使用输入 JSON，不允许猜测；缺失信息写 N/A。
+只输出 Markdown（不要代码围栏），不要输出推理过程。
 
-目标：把 {{date}} 的使用记录整理成可直接贴到笔记里的“日报表格”，并给出 3~6 条可执行建议（必须与数据强相关）。
+核心要求（必须遵守）：
+1) 报告重点是“TODO 进展与下一步决策”，不是流水账。
+2) 禁止逐条复述 app/site 或 block 明细，除非该明细直接支撑某个 TODO 的判断。
+3) 若 input.todo.open 为空，才退化为通用效率复盘。
+4) 对有时间安排的 TODO（due_date/start_ts/end_ts），优先给出“按时间执行”的建议。
 
 输出结构：
-1) 标题：# {{date}} 日报（RecorderPhone）
-2) 概览表（必须是 Markdown 表格）：
-| 指标 | 值 | 备注 |
-至少包含：Focus 总时长、Background audio 总时长、Blocks 数、已复盘 Blocks 数、未复盘 Blocks 数、Top1 占比、Focus 上下文数、Focus 切换次数、黑名单 Focus 时长、最晚活动时间、隐私级别。
-3) 时间分布（表格，最多 8 行）：
-| 时段(小时) | Focus | Audio | 备注 |
-规则：优先用 input.stats.focus_top_hours；若为空，再从 input.stats.focus_by_hour_seconds 推导。列出 Focus 最多的 Top 6 小时，再加 1 行“其余”。
-4) Top 列表（最多 10 行，表格）：
-| Rank | 类型(app/site) | 名称(优先 title；没有就用域名/应用) | 次级信息(域名/应用) | 时长 | 占比 | 黑名单? |
-5) Blocks 表（按时间升序，最多 20 行，超出就合并为“其余”一行）：
-| 时间段 | Top Focus | Focus 时长 | Top Audio | Audio 时长 | doing/output/next(若有) | Tags | 状态(reviewed/skipped/pending) |
-6) 洞察与建议：3~6 条 bullet，每条以 “Action:” 开头，必须可执行且与数据强相关。
-建议尽量覆盖：节奏（高峰时段）、碎片化（切换次数/上下文数）、黑名单时间、未复盘 block 的闭环。
+1) 标题：# {{date}} 日报（TODO 驱动）
+2) TODO 进展表（必须优先输出）：
+| TODO | 当前状态(推进/受阻/待启动) | 证据(引用数据) | 风险/阻塞 | 下一步(一句动作) |
+规则：基于 input.todo.open；若为空写“当前无开放 TODO”。
+3) 核心指标表（6~10 行，不要冗长）：
+| 指标 | 值 | 解读 |
+建议指标：Focus 总时长、Audio 总时长、Top1 占比、上下文切换次数、黑名单 Focus 时长、未复盘 Blocks、最晚活动时间。
+4) 决策建议（3~5 条，每条以 `Action:` 开头）：
+- 必须按优先级排序（P1/P2/P3）。
+- 每条建议必须绑定某个 TODO（若无 TODO，绑定一个“本周新 TODO”）。
+- 每条建议必须可执行、可验证，避免空话。
+5) 明日计划（表格，最多 5 行）：
+| 优先级 | 动作 | 预估时长 | 成功标准 |
 
 输入 JSON：
 {{json}}
 "#;
 
 const DEFAULT_WEEKLY_PROMPT: &str = r#"
-你是严格的周复盘助手。只能使用我提供的 JSON 数据，不要猜测；缺失信息用 N/A。
-只输出 Markdown（不要代码围栏），不要输出任何额外解释。
+你是严格的“TODO 驱动”周复盘助手。只能使用输入 JSON，不允许猜测；缺失信息写 N/A。
+只输出 Markdown（不要代码围栏），不要输出推理过程。
 
-目标：把 {{week_start}}~{{week_end}} 的记录整理成“周报表格 + 下周实验建议”。
+核心要求（必须遵守）：
+1) 报告围绕 TODO 的周进展、阻塞与下周计划，不做流水账汇总。
+2) 禁止堆砌 Top 列表细节，除非用于支撑某个 TODO 结论。
+3) 建议必须可执行、可量化、可在下周验证。
+4) 优先利用 TODO 的计划时间（due_date/start_ts/end_ts）给出“下周日历化安排”。
 
 输出结构：
-1) 标题：# 周报 {{week_start}} ~ {{week_end}}（RecorderPhone）
-2) 每日概览表（表格，按日期升序）：
-| 日期 | Focus 时长 | Audio 时长 | Blocks | 已复盘 | Top1 | Top1 占比 |
-3) 本周 Top（最多 15 行，表格）：
-| Rank | 类型(app/site) | 名称(优先 title；没有就用域名/应用) | 次级信息 | 总时长 | 占比 |
-4) 未复盘清单（如有，表格，最多 10 行）：
-| 日期 | 时间段 | Top Focus | 备注 |
-5) 下周建议（3~5 条 bullet，以 “Action:” 开头），并给出 1 个“可量化实验”。
+1) 标题：# 周报 {{week_start}} ~ {{week_end}}（TODO 驱动）
+2) TODO 周进展表（优先输出）：
+| TODO | 本周状态(完成/推进/停滞) | 数据证据 | 主要阻塞 | 下周动作 |
+规则：优先使用 input.todo.open 与 input.todo.done_recent。
+3) 周度关键指标（精简表格）：
+| 指标 | 本周值 | 变化/解读 |
+4) 下周执行计划（3~6 条，以 `Action:` 开头）：
+- 每条标注优先级（P1/P2/P3）和预计投入时间。
+- 每条都要对应 TODO（已有或新建）。
+5) 一个可量化实验：
+| 假设 | 执行方式 | 量化指标 | 验收阈值 |
 
 输入 JSON：
 {{json}}
@@ -140,7 +151,7 @@ struct ReportSettings {
     daily_at_minutes: i64, // 0..1439 (local)
     daily_prompt: String,
     weekly_enabled: bool,
-    weekly_weekday: i32,   // 1=Mon..7=Sun
+    weekly_weekday: i32,    // 1=Mon..7=Sun
     weekly_at_minutes: i64, // 0..1439 (local)
     weekly_prompt: String,
     save_md: bool,
@@ -1031,10 +1042,18 @@ async fn main() -> anyhow::Result<()> {
             post(post_generate_weekly_report).options(options_ok),
         )
         .route(
-            "/reports",
-            get(get_reports)
-                .post(post_report)
+            "/reports/todos",
+            get(get_report_todos)
+                .post(post_report_todo)
                 .options(options_ok),
+        )
+        .route(
+            "/reports/todos/:id",
+            delete(delete_report_todo).options(options_ok),
+        )
+        .route(
+            "/reports",
+            get(get_reports).post(post_report).options(options_ok),
         )
         .route(
             "/reports/:id",
@@ -1777,6 +1796,403 @@ async fn post_report_settings(
         }),
     })
     .into_response()
+}
+
+async fn get_report_todos(
+    State(state): State<AppState>,
+    Query(q): Query<ReportTodosQuery>,
+) -> Response {
+    let limit = q.limit.clamp(1, 500);
+    let mut conn = state.conn.lock().await;
+    match list_report_todos(&mut conn, limit) {
+        Ok(todos) => Json(OkResponse {
+            ok: true,
+            data: Some(todos),
+        })
+        .into_response(),
+        Err(err) => {
+            error!("list_report_todos failed: {err}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrResponse {
+                    ok: false,
+                    error: "db_error",
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+fn normalize_todo_due_date(raw: Option<&str>) -> Result<Option<String>, &'static str> {
+    let Some(v) = raw else {
+        return Ok(None);
+    };
+    let t = v.trim();
+    if t.is_empty() {
+        return Ok(None);
+    }
+    if !validate_yyyy_mm_dd(t) {
+        return Err("invalid_due_date");
+    }
+    Ok(Some(t.to_string()))
+}
+
+fn normalize_todo_ts(raw: Option<&str>, err: &'static str) -> Result<Option<String>, &'static str> {
+    let Some(v) = raw else {
+        return Ok(None);
+    };
+    let t = v.trim();
+    if t.is_empty() {
+        return Ok(None);
+    }
+    let ts = OffsetDateTime::parse(t, &Rfc3339).map_err(|_| err)?;
+    Ok(Some(ts.format(&Rfc3339).unwrap_or_else(|_| t.to_string())))
+}
+
+fn validate_todo_schedule(
+    start_ts: Option<&str>,
+    end_ts: Option<&str>,
+) -> Result<(), &'static str> {
+    if start_ts.is_none() && end_ts.is_none() {
+        return Ok(());
+    }
+    let Some(st_raw) = start_ts else {
+        return Err("invalid_schedule_range");
+    };
+    let Some(en_raw) = end_ts else {
+        return Err("invalid_schedule_range");
+    };
+    let st = OffsetDateTime::parse(st_raw, &Rfc3339).map_err(|_| "invalid_start_ts")?;
+    let en = OffsetDateTime::parse(en_raw, &Rfc3339).map_err(|_| "invalid_end_ts")?;
+    if en <= st {
+        return Err("invalid_schedule_range");
+    }
+    Ok(())
+}
+
+async fn post_report_todo(
+    State(state): State<AppState>,
+    Json(req): Json<ReportTodoUpsert>,
+) -> Response {
+    let now = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_default();
+
+    let mut conn = state.conn.lock().await;
+
+    let todo = if let Some(id) = req.id {
+        let existing = match get_report_todo_by_id(&mut conn, id) {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: "not_found",
+                    }),
+                )
+                    .into_response();
+            }
+            Err(err) => {
+                error!("get_report_todo_by_id failed: {err}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: "db_error",
+                    }),
+                )
+                    .into_response();
+            }
+        };
+
+        let content = if let Some(v) = req.content.as_deref() {
+            let t = v.trim();
+            if t.is_empty() {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: "invalid_content",
+                    }),
+                )
+                    .into_response();
+            }
+            t.to_string()
+        } else {
+            existing.content.clone()
+        };
+
+        let done = req.done.unwrap_or(existing.done);
+        let done_at = if done {
+            if existing.done {
+                existing.done_at.clone().or_else(|| Some(now.clone()))
+            } else {
+                Some(now.clone())
+            }
+        } else {
+            None
+        };
+        let due_date = if let Some(v) = req.due_date.as_deref() {
+            match normalize_todo_due_date(Some(v)) {
+                Ok(x) => x,
+                Err(code) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrResponse {
+                            ok: false,
+                            error: code,
+                        }),
+                    )
+                        .into_response();
+                }
+            }
+        } else {
+            existing.due_date.clone()
+        };
+        let start_ts = if let Some(v) = req.start_ts.as_deref() {
+            match normalize_todo_ts(Some(v), "invalid_start_ts") {
+                Ok(x) => x,
+                Err(code) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrResponse {
+                            ok: false,
+                            error: code,
+                        }),
+                    )
+                        .into_response();
+                }
+            }
+        } else {
+            existing.start_ts.clone()
+        };
+        let end_ts = if let Some(v) = req.end_ts.as_deref() {
+            match normalize_todo_ts(Some(v), "invalid_end_ts") {
+                Ok(x) => x,
+                Err(code) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrResponse {
+                            ok: false,
+                            error: code,
+                        }),
+                    )
+                        .into_response();
+                }
+            }
+        } else {
+            existing.end_ts.clone()
+        };
+        if let Err(code) = validate_todo_schedule(start_ts.as_deref(), end_ts.as_deref()) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrResponse {
+                    ok: false,
+                    error: code,
+                }),
+            )
+                .into_response();
+        }
+
+        if let Err(err) = update_report_todo(
+            &mut conn,
+            id,
+            &content,
+            done,
+            due_date.as_deref(),
+            start_ts.as_deref(),
+            end_ts.as_deref(),
+            done_at.as_deref(),
+            &now,
+        ) {
+            error!("update_report_todo failed: {err}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrResponse {
+                    ok: false,
+                    error: "db_error",
+                }),
+            )
+                .into_response();
+        }
+
+        match get_report_todo_by_id(&mut conn, id) {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: "db_error",
+                    }),
+                )
+                    .into_response();
+            }
+            Err(err) => {
+                error!("get_report_todo_by_id after update failed: {err}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: "db_error",
+                    }),
+                )
+                    .into_response();
+            }
+        }
+    } else {
+        let content = match req.content.as_deref().map(str::trim) {
+            Some(v) if !v.is_empty() => v.to_string(),
+            _ => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: "missing_content",
+                    }),
+                )
+                    .into_response();
+            }
+        };
+        let done = req.done.unwrap_or(false);
+        let done_at = if done { Some(now.as_str()) } else { None };
+        let due_date = match normalize_todo_due_date(req.due_date.as_deref()) {
+            Ok(x) => x,
+            Err(code) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: code,
+                    }),
+                )
+                    .into_response();
+            }
+        };
+        let start_ts = match normalize_todo_ts(req.start_ts.as_deref(), "invalid_start_ts") {
+            Ok(x) => x,
+            Err(code) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: code,
+                    }),
+                )
+                    .into_response();
+            }
+        };
+        let end_ts = match normalize_todo_ts(req.end_ts.as_deref(), "invalid_end_ts") {
+            Ok(x) => x,
+            Err(code) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: code,
+                    }),
+                )
+                    .into_response();
+            }
+        };
+        if let Err(code) = validate_todo_schedule(start_ts.as_deref(), end_ts.as_deref()) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrResponse {
+                    ok: false,
+                    error: code,
+                }),
+            )
+                .into_response();
+        }
+
+        let id = match insert_report_todo(
+            &mut conn,
+            &content,
+            done,
+            due_date.as_deref(),
+            start_ts.as_deref(),
+            end_ts.as_deref(),
+            done_at,
+            &now,
+        ) {
+            Ok(v) => v,
+            Err(err) => {
+                error!("insert_report_todo failed: {err}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: "db_error",
+                    }),
+                )
+                    .into_response();
+            }
+        };
+
+        match get_report_todo_by_id(&mut conn, id) {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: "db_error",
+                    }),
+                )
+                    .into_response();
+            }
+            Err(err) => {
+                error!("get_report_todo_by_id after insert failed: {err}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrResponse {
+                        ok: false,
+                        error: "db_error",
+                    }),
+                )
+                    .into_response();
+            }
+        }
+    };
+
+    Json(OkResponse {
+        ok: true,
+        data: Some(todo),
+    })
+    .into_response()
+}
+
+async fn delete_report_todo(State(state): State<AppState>, Path(id): Path<i64>) -> Response {
+    let mut conn = state.conn.lock().await;
+    match delete_report_todo_by_id(&mut conn, id) {
+        Ok(0) => (
+            StatusCode::NOT_FOUND,
+            Json(ErrResponse {
+                ok: false,
+                error: "not_found",
+            }),
+        )
+            .into_response(),
+        Ok(_) => Json(OkResponse::<Value> {
+            ok: true,
+            data: None,
+        })
+        .into_response(),
+        Err(err) => {
+            error!("delete_report_todo_by_id failed: {err}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrResponse {
+                    ok: false,
+                    error: "db_error",
+                }),
+            )
+                .into_response()
+        }
+    }
 }
 
 async fn get_blocks_today(State(state): State<AppState>, Query(q): Query<BlocksQuery>) -> Response {
@@ -2669,6 +3085,49 @@ struct ReportRecord {
     error: Option<String>,
 }
 
+#[derive(Clone, Serialize)]
+struct ReportTodo {
+    id: i64,
+    content: String,
+    done: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    due_date: Option<String>, // YYYY-MM-DD
+    #[serde(skip_serializing_if = "Option::is_none")]
+    start_ts: Option<String>, // RFC3339
+    #[serde(skip_serializing_if = "Option::is_none")]
+    end_ts: Option<String>, // RFC3339
+    created_at: String,
+    updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    done_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ReportTodoUpsert {
+    #[serde(default)]
+    id: Option<i64>,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    done: Option<bool>,
+    #[serde(default)]
+    due_date: Option<String>,
+    #[serde(default)]
+    start_ts: Option<String>,
+    #[serde(default)]
+    end_ts: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ReportTodosQuery {
+    #[serde(default = "default_report_todos_limit")]
+    limit: usize,
+}
+
+fn default_report_todos_limit() -> usize {
+    200
+}
+
 #[derive(Deserialize)]
 struct ReportUpsert {
     id: String,
@@ -3116,7 +3575,11 @@ async fn get_report_by_id(State(state): State<AppState>, Path(id): Path<String>)
 
     let mut conn = state.conn.lock().await;
     match get_report(&mut conn, &id) {
-        Ok(Some(r)) => Json(OkResponse { ok: true, data: Some(r) }).into_response(),
+        Ok(Some(r)) => Json(OkResponse {
+            ok: true,
+            data: Some(r),
+        })
+        .into_response(),
         Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(ErrResponse {
@@ -3180,7 +3643,11 @@ async fn post_report(State(state): State<AppState>, Json(req): Json<ReportUpsert
         .as_deref()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default());
+        .unwrap_or_else(|| {
+            OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default()
+        });
 
     let record = ReportRecord {
         id: id.clone(),
@@ -3188,8 +3655,14 @@ async fn post_report(State(state): State<AppState>, Json(req): Json<ReportUpsert
         period_start: start,
         period_end: end,
         generated_at,
-        provider_url: req.provider_url.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
-        model: req.model.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+        provider_url: req
+            .provider_url
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        model: req
+            .model
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
         prompt: req.prompt,
         input_json: req.input_json,
         output_md: req.output_md,
@@ -3210,7 +3683,11 @@ async fn post_report(State(state): State<AppState>, Json(req): Json<ReportUpsert
     }
 
     match get_report(&mut conn, &id) {
-        Ok(Some(r)) => Json(OkResponse { ok: true, data: Some(r) }).into_response(),
+        Ok(Some(r)) => Json(OkResponse {
+            ok: true,
+            data: Some(r),
+        })
+        .into_response(),
         Ok(None) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrResponse {
@@ -3255,7 +3732,11 @@ async fn delete_report(State(state): State<AppState>, Path(id): Path<String>) ->
             }),
         )
             .into_response(),
-        Ok(_) => Json(OkResponse::<Value> { ok: true, data: None }).into_response(),
+        Ok(_) => Json(OkResponse::<Value> {
+            ok: true,
+            data: None,
+        })
+        .into_response(),
         Err(err) => {
             error!("delete_report_by_id failed: {err}");
             (
@@ -3488,7 +3969,12 @@ async fn openai_chat_completions_markdown(
 }
 
 fn resolve_reports_output_dir(state: &AppState, cfg: &ReportSettings) -> PathBuf {
-    if let Some(dir) = cfg.output_dir.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(dir) = cfg
+        .output_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         return PathBuf::from(dir);
     }
     state.data_dir.join("reports")
@@ -3591,7 +4077,9 @@ fn aggregate_top_from_segments(
                             .unwrap_or(entity.as_str())
                             .eq_ignore_ascii_case("code.exe");
                         if is_vscode {
-                            extract_vscode_workspace(t).map(|ws| format!("Workspace: {ws}")).or_else(|| Some(t.to_string()))
+                            extract_vscode_workspace(t)
+                                .map(|ws| format!("Workspace: {ws}"))
+                                .or_else(|| Some(t.to_string()))
                         } else {
                             Some(t.to_string())
                         }
@@ -3658,20 +4146,22 @@ async fn generate_daily_report(
     }
 
     let tz_offset = tz_offset_from_minutes(tz_offset_minutes);
-    let day_start = parse_day_start_utc_for_offset(date, tz_offset).map_err(|_| anyhow::anyhow!("invalid_date"))?;
+    let day_start = parse_day_start_utc_for_offset(date, tz_offset)
+        .map_err(|_| anyhow::anyhow!("invalid_date"))?;
     let day_end = day_start + time::Duration::days(1);
     let now = OffsetDateTime::now_utc().min(day_end);
 
     // Load DB data needed for input JSON.
-    let (settings, rules, blocks, segments) = {
+    let (settings, rules, blocks, segments, todos) = {
         let settings = { *state.settings.lock().await };
         let mut conn = state.conn.lock().await;
         let rules = list_privacy_rules(&mut conn).unwrap_or_default();
+        let todos = list_report_todos(&mut conn, 300).unwrap_or_default();
         let privacy = PrivacyIndex::load(&mut conn).unwrap_or_default();
         let events = list_events_between(&mut conn, day_start, day_end, &privacy)?;
         let blocks = attach_reviews(&mut conn, build_blocks(&events, settings, now))?;
         let segments = build_timeline_segments(&events, settings, now);
-        (settings, rules, blocks, segments)
+        (settings, rules, blocks, segments, todos)
     };
 
     let focus_seconds: i64 = segments
@@ -3689,7 +4179,10 @@ async fn generate_daily_report(
         .iter()
         .filter(|b| block_summary_is_reviewed(b))
         .count() as i64;
-    let skipped = blocks.iter().filter(|b| b.review.as_ref().map(|r| r.skipped).unwrap_or(false)).count() as i64;
+    let skipped = blocks
+        .iter()
+        .filter(|b| b.review.as_ref().map(|r| r.skipped).unwrap_or(false))
+        .count() as i64;
     let pending = (blocks.len() as i64).saturating_sub(reviewed);
 
     let last_activity_ts_local: Option<String> = segments
@@ -3857,6 +4350,41 @@ async fn generate_daily_report(
         })
         .collect();
 
+    let todos_open_count = todos.iter().filter(|t| !t.done).count();
+    let todos_done_count = todos.iter().filter(|t| t.done).count();
+    let todos_open: Vec<Value> = todos
+        .iter()
+        .filter(|t| !t.done)
+        .take(30)
+        .map(|t| {
+            json!({
+              "id": t.id,
+              "content": t.content,
+              "due_date": t.due_date,
+              "start_ts": t.start_ts,
+              "end_ts": t.end_ts,
+              "created_at": t.created_at,
+              "updated_at": t.updated_at,
+            })
+        })
+        .collect();
+    let todos_done_recent: Vec<Value> = todos
+        .iter()
+        .filter(|t| t.done)
+        .take(15)
+        .map(|t| {
+            json!({
+              "id": t.id,
+              "content": t.content,
+              "due_date": t.due_date,
+              "start_ts": t.start_ts,
+              "end_ts": t.end_ts,
+              "done_at": t.done_at,
+              "updated_at": t.updated_at,
+            })
+        })
+        .collect();
+
     let longest_focus_json = longest_focus.map(|s| {
         json!({
           "kind": s.kind,
@@ -3981,6 +4509,12 @@ async fn generate_daily_report(
         "apps": blocked_apps_list,
         "domains": blocked_domains_list,
       },
+      "todo": {
+        "open_count": todos_open_count,
+        "done_count": todos_done_count,
+        "open": todos_open,
+        "done_recent": todos_done_recent,
+      },
       "top_focus": top_focus,
       "top_audio": top_audio,
       "blocks": blocks_json,
@@ -3989,7 +4523,9 @@ async fn generate_daily_report(
     let input_json = serde_json::to_string_pretty(&input)?;
     let prompt = render_prompt_template(&cfg.daily_prompt, &[("date", date)], &input_json);
 
-    let generated_at = OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default();
+    let generated_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_default();
     let provider_url = cfg.api_base_url.trim().to_string();
     let model = cfg.model.trim().to_string();
 
@@ -4017,8 +4553,7 @@ async fn generate_daily_report(
             if cfg.save_md {
                 let p = out_dir.join(format!("report-daily-{date}.md"));
                 if let Some(md) = record.output_md.as_deref() {
-                    if let Err(e) = atomic_write_text(&p, format!("{}\n", md.trim_end()).as_str())
-                    {
+                    if let Err(e) = atomic_write_text(&p, format!("{}\n", md.trim_end()).as_str()) {
                         error!("write report md failed: {e}");
                     }
                 }
@@ -4086,10 +4621,12 @@ async fn generate_weekly_report(
     }
 
     let settings = { *state.settings.lock().await };
-    let (blocked_apps, blocked_domains) = {
+    let (blocked_apps, blocked_domains, todos) = {
         let mut conn = state.conn.lock().await;
         let rules = list_privacy_rules(&mut conn).unwrap_or_default();
-        blocked_sets(&rules)
+        let todos = list_report_todos(&mut conn, 300).unwrap_or_default();
+        let (apps, domains) = blocked_sets(&rules);
+        (apps, domains, todos)
     };
     let mut blocked_apps_list: Vec<String> = blocked_apps.iter().cloned().collect();
     blocked_apps_list.sort();
@@ -4110,17 +4647,29 @@ async fn generate_weekly_report(
     // Iterate 7 days starting from Monday.
     use chrono::{Duration, NaiveDate};
     let parts: Vec<&str> = start.split('-').collect();
-    let y: i32 = parts.get(0).and_then(|s| s.parse().ok()).ok_or_else(|| anyhow::anyhow!("invalid_week_start"))?;
-    let m: u32 = parts.get(1).and_then(|s| s.parse().ok()).ok_or_else(|| anyhow::anyhow!("invalid_week_start"))?;
-    let d: u32 = parts.get(2).and_then(|s| s.parse().ok()).ok_or_else(|| anyhow::anyhow!("invalid_week_start"))?;
-    let week_start_day = NaiveDate::from_ymd_opt(y, m, d).ok_or_else(|| anyhow::anyhow!("invalid_week_start"))?;
+    let y: i32 = parts
+        .get(0)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| anyhow::anyhow!("invalid_week_start"))?;
+    let m: u32 = parts
+        .get(1)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| anyhow::anyhow!("invalid_week_start"))?;
+    let d: u32 = parts
+        .get(2)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| anyhow::anyhow!("invalid_week_start"))?;
+    let week_start_day =
+        NaiveDate::from_ymd_opt(y, m, d).ok_or_else(|| anyhow::anyhow!("invalid_week_start"))?;
 
     for i in 0..7 {
         let day = week_start_day + Duration::days(i);
         let date = day.format("%Y-%m-%d").to_string();
-        let day_tz_offset_minutes = tz_offset_minutes_for_day_local(&date).unwrap_or(tz_offset_minutes);
+        let day_tz_offset_minutes =
+            tz_offset_minutes_for_day_local(&date).unwrap_or(tz_offset_minutes);
         let tz_offset = tz_offset_from_minutes(day_tz_offset_minutes);
-        let day_start = parse_day_start_utc_for_offset(&date, tz_offset).map_err(|_| anyhow::anyhow!("invalid_date"))?;
+        let day_start = parse_day_start_utc_for_offset(&date, tz_offset)
+            .map_err(|_| anyhow::anyhow!("invalid_date"))?;
         let day_end = day_start + time::Duration::days(1);
         let now = OffsetDateTime::now_utc().min(day_end);
 
@@ -4240,6 +4789,41 @@ async fn generate_weekly_report(
         15,
     );
 
+    let todos_open_count = todos.iter().filter(|t| !t.done).count();
+    let todos_done_count = todos.iter().filter(|t| t.done).count();
+    let todos_open: Vec<Value> = todos
+        .iter()
+        .filter(|t| !t.done)
+        .take(30)
+        .map(|t| {
+            json!({
+              "id": t.id,
+              "content": t.content,
+              "due_date": t.due_date,
+              "start_ts": t.start_ts,
+              "end_ts": t.end_ts,
+              "created_at": t.created_at,
+              "updated_at": t.updated_at,
+            })
+        })
+        .collect();
+    let todos_done_recent: Vec<Value> = todos
+        .iter()
+        .filter(|t| t.done)
+        .take(15)
+        .map(|t| {
+            json!({
+              "id": t.id,
+              "content": t.content,
+              "due_date": t.due_date,
+              "start_ts": t.start_ts,
+              "end_ts": t.end_ts,
+              "done_at": t.done_at,
+              "updated_at": t.updated_at,
+            })
+        })
+        .collect();
+
     let input = json!({
       "schema": "recorderphone_report_v1",
       "kind": "weekly",
@@ -4256,15 +4840,27 @@ async fn generate_weekly_report(
         "apps": blocked_apps_list,
         "domains": blocked_domains_list,
       },
+      "todo": {
+        "open_count": todos_open_count,
+        "done_count": todos_done_count,
+        "open": todos_open,
+        "done_recent": todos_done_recent,
+      },
       "daily": daily,
       "top_focus_week": week_top,
       "pending_blocks": pending_blocks.into_iter().take(10).collect::<Vec<_>>(),
     });
 
     let input_json = serde_json::to_string_pretty(&input)?;
-    let prompt = render_prompt_template(&cfg.weekly_prompt, &[("week_start", start), ("week_end", end)], &input_json);
+    let prompt = render_prompt_template(
+        &cfg.weekly_prompt,
+        &[("week_start", start), ("week_end", end)],
+        &input_json,
+    );
 
-    let generated_at = OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default();
+    let generated_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_default();
     let provider_url = cfg.api_base_url.trim().to_string();
     let model = cfg.model.trim().to_string();
 
@@ -4293,8 +4889,7 @@ async fn generate_weekly_report(
             if cfg.save_md {
                 let p = out_dir.join(format!("report-weekly-{start}_to_{end}.md"));
                 if let Some(md) = record.output_md.as_deref() {
-                    if let Err(e) = atomic_write_text(&p, format!("{}\n", md.trim_end()).as_str())
-                    {
+                    if let Err(e) = atomic_write_text(&p, format!("{}\n", md.trim_end()).as_str()) {
                         error!("write report md failed: {e}");
                     }
                 }
@@ -4357,7 +4952,9 @@ async fn report_scheduler_loop(state: AppState) {
                 let now = Local::now();
                 let minutes_now = (now.hour() as i64) * 60 + (now.minute() as i64);
                 if minutes_now >= cfg.daily_at_minutes.clamp(0, 1439) {
-                    let target = (now - ChronoDuration::days(1)).format("%Y-%m-%d").to_string();
+                    let target = (now - ChronoDuration::days(1))
+                        .format("%Y-%m-%d")
+                        .to_string();
                     let rid = report_id_daily(&target);
 
                     let needs = {
@@ -4548,10 +5145,26 @@ CREATE TABLE IF NOT EXISTS reports (
   error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reports_kind_end ON reports(kind, period_end);
+
+CREATE TABLE IF NOT EXISTS report_todos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  content TEXT NOT NULL,
+  done INTEGER NOT NULL DEFAULT 0,
+  due_date TEXT,
+  start_ts TEXT,
+  end_ts TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  done_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_report_todos_done_updated ON report_todos(done, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_report_todos_due_date ON report_todos(due_date, done, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_report_todos_start_ts ON report_todos(start_ts, done, updated_at DESC, id DESC);
 "#,
     )?;
     ensure_app_settings_columns(conn)?;
     ensure_block_reviews_columns(conn)?;
+    ensure_report_todos_columns(conn)?;
     Ok(())
 }
 
@@ -4622,6 +5235,37 @@ fn ensure_block_reviews_columns(conn: &Connection) -> rusqlite::Result<()> {
     }
 
     Ok(())
+}
+
+fn ensure_report_todos_columns(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(report_todos)")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    let mut cols: HashSet<String> = HashSet::new();
+    for r in rows {
+        cols.insert(r?);
+    }
+
+    if !cols.contains("due_date") {
+        conn.execute("ALTER TABLE report_todos ADD COLUMN due_date TEXT", [])?;
+    }
+    if !cols.contains("start_ts") {
+        conn.execute("ALTER TABLE report_todos ADD COLUMN start_ts TEXT", [])?;
+    }
+    if !cols.contains("end_ts") {
+        conn.execute("ALTER TABLE report_todos ADD COLUMN end_ts TEXT", [])?;
+    }
+
+    Ok(())
+}
+
+fn looks_like_legacy_daily_prompt(raw: &str) -> bool {
+    raw.contains("目标：把 {{date}} 的使用记录整理成可直接贴到笔记里的“日报表格”")
+        && raw.contains("洞察与建议：3~6 条 bullet")
+}
+
+fn looks_like_legacy_weekly_prompt(raw: &str) -> bool {
+    raw.contains("目标：把 {{week_start}}~{{week_end}} 的记录整理成“周报表格 + 下周实验建议”")
+        && raw.contains("下周建议（3~5 条 bullet，以 “Action:” 开头）")
 }
 
 fn load_or_init_settings(conn: &mut Connection, defaults: Settings) -> rusqlite::Result<Settings> {
@@ -4702,7 +5346,7 @@ fn load_or_init_report_settings(conn: &mut Connection) -> rusqlite::Result<Repor
             daily_at_minutes: settings.daily_at_minutes.clamp(0, 1439),
             daily_prompt: {
                 let v = settings.daily_prompt.trim();
-                if v.is_empty() {
+                if v.is_empty() || looks_like_legacy_daily_prompt(v) {
                     defaults.daily_prompt.clone()
                 } else {
                     settings.daily_prompt.clone()
@@ -4713,7 +5357,7 @@ fn load_or_init_report_settings(conn: &mut Connection) -> rusqlite::Result<Repor
             weekly_at_minutes: settings.weekly_at_minutes.clamp(0, 1439),
             weekly_prompt: {
                 let v = settings.weekly_prompt.trim();
-                if v.is_empty() {
+                if v.is_empty() || looks_like_legacy_weekly_prompt(v) {
                     defaults.weekly_prompt.clone()
                 } else {
                     settings.weekly_prompt.clone()
@@ -4931,8 +5575,16 @@ ON CONFLICT(id) DO UPDATE SET
             settings.store_exe_path as i64,
             settings.review_min_seconds,
             settings.review_notify_repeat_minutes,
-            if settings.review_notify_when_paused { 1i64 } else { 0i64 },
-            if settings.review_notify_when_idle { 1i64 } else { 0i64 },
+            if settings.review_notify_when_paused {
+                1i64
+            } else {
+                0i64
+            },
+            if settings.review_notify_when_idle {
+                1i64
+            } else {
+                0i64
+            },
             updated_at,
         ),
     )?;
@@ -5014,6 +5666,140 @@ ON CONFLICT(kind, value) DO UPDATE SET
 
 fn delete_privacy_rule_by_id(conn: &mut Connection, id: i64) -> rusqlite::Result<usize> {
     conn.execute("DELETE FROM privacy_rules WHERE id = ?1", [id])
+}
+
+fn list_report_todos(conn: &mut Connection, limit: usize) -> rusqlite::Result<Vec<ReportTodo>> {
+    let mut stmt = conn.prepare(
+        r#"
+SELECT
+  id,
+  content,
+  done,
+  due_date,
+  start_ts,
+  end_ts,
+  created_at,
+  updated_at,
+  done_at
+FROM report_todos
+ORDER BY done ASC, updated_at DESC, id DESC
+LIMIT ?1
+"#,
+    )?;
+    let rows = stmt.query_map([limit as i64], |row| {
+        let done: i64 = row.get(2)?;
+        Ok(ReportTodo {
+            id: row.get(0)?,
+            content: row.get(1)?,
+            done: done != 0,
+            due_date: row.get(3)?,
+            start_ts: row.get(4)?,
+            end_ts: row.get(5)?,
+            created_at: row.get(6)?,
+            updated_at: row.get(7)?,
+            done_at: row.get(8)?,
+        })
+    })?;
+
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+fn get_report_todo_by_id(conn: &mut Connection, id: i64) -> rusqlite::Result<Option<ReportTodo>> {
+    let mut stmt = conn.prepare(
+        r#"
+SELECT
+  id,
+  content,
+  done,
+  due_date,
+  start_ts,
+  end_ts,
+  created_at,
+  updated_at,
+  done_at
+FROM report_todos
+WHERE id = ?1
+LIMIT 1
+"#,
+    )?;
+    match stmt.query_row([id], |row| {
+        let done: i64 = row.get(2)?;
+        Ok(ReportTodo {
+            id: row.get(0)?,
+            content: row.get(1)?,
+            done: done != 0,
+            due_date: row.get(3)?,
+            start_ts: row.get(4)?,
+            end_ts: row.get(5)?,
+            created_at: row.get(6)?,
+            updated_at: row.get(7)?,
+            done_at: row.get(8)?,
+        })
+    }) {
+        Ok(v) => Ok(Some(v)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+fn insert_report_todo(
+    conn: &mut Connection,
+    content: &str,
+    done: bool,
+    due_date: Option<&str>,
+    start_ts: Option<&str>,
+    end_ts: Option<&str>,
+    done_at: Option<&str>,
+    now: &str,
+) -> rusqlite::Result<i64> {
+    conn.execute(
+        "INSERT INTO report_todos (content, done, due_date, start_ts, end_ts, created_at, updated_at, done_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        (
+            content,
+            if done { 1i64 } else { 0i64 },
+            due_date,
+            start_ts,
+            end_ts,
+            now,
+            now,
+            done_at,
+        ),
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+fn update_report_todo(
+    conn: &mut Connection,
+    id: i64,
+    content: &str,
+    done: bool,
+    due_date: Option<&str>,
+    start_ts: Option<&str>,
+    end_ts: Option<&str>,
+    done_at: Option<&str>,
+    now: &str,
+) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE report_todos SET content = ?1, done = ?2, due_date = ?3, start_ts = ?4, end_ts = ?5, done_at = ?6, updated_at = ?7 WHERE id = ?8",
+        (
+            content,
+            if done { 1i64 } else { 0i64 },
+            due_date,
+            start_ts,
+            end_ts,
+            done_at,
+            now,
+            id,
+        ),
+    )
+}
+
+fn delete_report_todo_by_id(conn: &mut Connection, id: i64) -> rusqlite::Result<usize> {
+    conn.execute("DELETE FROM report_todos WHERE id = ?1", [id])
 }
 
 fn list_reports(conn: &mut Connection, limit: usize) -> rusqlite::Result<Vec<ReportSummary>> {

@@ -493,6 +493,56 @@ class CoreClient {
     return ReportRecord.fromJson(data);
   }
 
+  Future<List<ReportTodo>> reportTodos({int limit = 200}) async {
+    final l = limit.clamp(1, 500).toString();
+    final res = await _http.get(_u("/reports/todos", {"limit": l}));
+    if (res.statusCode != 200) {
+      throw Exception("http_${res.statusCode}");
+    }
+    final obj = jsonDecode(res.body) as Map<String, dynamic>;
+    final data = (obj["data"] as List<dynamic>? ?? const []);
+    return data
+        .map((e) => ReportTodo.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<ReportTodo> upsertReportTodo({
+    int? id,
+    String? content,
+    bool? done,
+    String? dueDate,
+    String? startTs,
+    String? endTs,
+  }) async {
+    final body = <String, dynamic>{};
+    if (id != null) body["id"] = id;
+    if (content != null) body["content"] = content;
+    if (done != null) body["done"] = done;
+    if (dueDate != null) body["due_date"] = dueDate;
+    if (startTs != null) body["start_ts"] = startTs;
+    if (endTs != null) body["end_ts"] = endTs;
+
+    final res = await _http.post(
+      _u("/reports/todos"),
+      headers: {"content-type": "application/json"},
+      body: jsonEncode(body),
+    );
+    if (res.statusCode != 200) {
+      throw Exception("http_${res.statusCode}");
+    }
+    final obj = jsonDecode(res.body) as Map<String, dynamic>;
+    final data = (obj["data"] as Map<String, dynamic>?);
+    if (data == null) throw Exception("invalid_response");
+    return ReportTodo.fromJson(data);
+  }
+
+  Future<void> deleteReportTodo(int id) async {
+    final res = await _http.delete(_u("/reports/todos/$id"));
+    if (res.statusCode != 200) {
+      throw Exception("http_${res.statusCode}");
+    }
+  }
+
   Future<ReportRecord> upsertReport(ReportUpsert r) async {
     final res = await _http.post(
       _u("/reports"),
@@ -1094,6 +1144,67 @@ class ReportRecord {
       inputJson: json["input_json"] as String?,
       outputMd: json["output_md"] as String?,
       error: json["error"] as String?,
+    );
+  }
+}
+
+class ReportTodo {
+  ReportTodo({
+    required this.id,
+    required this.content,
+    required this.done,
+    required this.dueDate,
+    required this.startTs,
+    required this.endTs,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.doneAt,
+  });
+
+  final int id;
+  final String content;
+  final bool done;
+  final String? dueDate; // YYYY-MM-DD
+  final String? startTs; // RFC3339
+  final String? endTs; // RFC3339
+  final String createdAt;
+  final String updatedAt;
+  final String? doneAt;
+
+  DateTime? _startUtc;
+  DateTime? _endUtc;
+
+  DateTime? get startUtc {
+    return _startUtc ??= DateTime.tryParse(startTs ?? "")?.toUtc();
+  }
+
+  DateTime? get endUtc {
+    return _endUtc ??= DateTime.tryParse(endTs ?? "")?.toUtc();
+  }
+
+  DateTime? get startLocal {
+    final start = startUtc;
+    if (start == null) return null;
+    return start.toLocal();
+  }
+
+  DateTime? get endLocal {
+    final end = endUtc;
+    if (end == null) return null;
+    return end.toLocal();
+  }
+
+  factory ReportTodo.fromJson(Map<String, dynamic> json) {
+    return ReportTodo(
+      id: (json["id"] as int?) ?? 0,
+      content: (json["content"] as String?) ?? "",
+      done: (json["done"] as bool?) ?? false,
+      dueDate: json["due_date"] as String?,
+      startTs: json["start_ts"] as String?,
+      endTs: json["end_ts"] as String?,
+      createdAt: (json["created_at"] as String?) ?? "",
+      updatedAt: (json["updated_at"] as String?) ?? "",
+      doneAt: json["done_at"] as String?,
     );
   }
 }

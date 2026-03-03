@@ -13,6 +13,37 @@ import "../widgets/recorder_tooltip.dart";
 
 enum _ReportKindFilter { daily, weekly }
 
+enum _TodoCalendarView { day, week, month }
+
+class _ScheduledTodoLayout {
+  const _ScheduledTodoLayout({
+    required this.todo,
+    required this.dayIndex,
+    required this.startMinute,
+    required this.endMinute,
+    required this.columnIndex,
+    required this.columnCount,
+  });
+
+  final ReportTodo todo;
+  final int dayIndex;
+  final int startMinute;
+  final int endMinute;
+  final int columnIndex;
+  final int columnCount;
+
+  _ScheduledTodoLayout withColumnCount(int value) {
+    return _ScheduledTodoLayout(
+      todo: todo,
+      dayIndex: dayIndex,
+      startMinute: startMinute,
+      endMinute: endMinute,
+      columnIndex: columnIndex,
+      columnCount: value,
+    );
+  }
+}
+
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({
     super.key,
@@ -40,8 +71,11 @@ class ReportsScreenState extends State<ReportsScreen> {
   String? _effectiveOutputDir;
   String? _defaultDailyPrompt;
   String? _defaultWeeklyPrompt;
+  List<ReportTodo> _todos = const [];
 
   _ReportKindFilter _filter = _ReportKindFilter.daily;
+  _TodoCalendarView _todoView = _TodoCalendarView.week;
+  DateTime _todoAnchorDay = DateTime.now();
 
   bool _enabled = false;
   bool _dailyEnabled = false;
@@ -65,11 +99,20 @@ class ReportsScreenState extends State<ReportsScreen> {
   String? _saveError;
 
   bool _generating = false;
+  bool _todoBusy = false;
 
   Timer? _autoRetryTimer;
   int _autoRetryAttempts = 0;
 
   bool _agentBusy = false;
+  Timer? _calendarTicker;
+  int? _dragTodoId;
+  int? _dragOriginDayIndex;
+  int? _dragOriginStartMinute;
+  int? _dragCurrentDayIndex;
+  int? _dragCurrentStartMinute;
+  int? _dragDurationMinutes;
+  Offset? _dragStartGlobalPosition;
 
   @override
   void initState() {
@@ -80,6 +123,14 @@ class ReportsScreenState extends State<ReportsScreen> {
     _dailyPrompt = TextEditingController();
     _weeklyPrompt = TextEditingController();
     _outputDir = TextEditingController();
+    _todoAnchorDay = _normalizeDay(DateTime.now());
+    _calendarTicker = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted || !widget.isActive) return;
+      if (_todoView == _TodoCalendarView.week ||
+          _todoView == _TodoCalendarView.day) {
+        setState(() {});
+      }
+    });
     if (widget.isActive) {
       refresh(silent: true);
     }
@@ -112,6 +163,7 @@ class ReportsScreenState extends State<ReportsScreen> {
   @override
   void dispose() {
     _autoRetryTimer?.cancel();
+    _calendarTicker?.cancel();
     _apiBaseUrl.dispose();
     _apiKey.dispose();
     _model.dispose();
@@ -310,11 +362,16 @@ class ReportsScreenState extends State<ReportsScreen> {
       final listFuture = widget.client.reports(limit: 200);
       final settings = await settingsFuture;
       final list = await listFuture;
+      List<ReportTodo> todos = const [];
+      try {
+        todos = await widget.client.reportTodos(limit: 300);
+      } catch (_) {}
 
       if (!mounted) return;
       setState(() {
         _settings = settings;
         _reports = list;
+        _todos = todos;
         _applySettingsToState(settings);
         _error = null;
       });
@@ -360,6 +417,14 @@ class ReportsScreenState extends State<ReportsScreen> {
   }
 
   DateTime _normalizeDay(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  int _snapToQuarterHour(int minute) {
+    return ((minute + 7) ~/ 15) * 15;
+  }
 
   DateTime _startOfWeekMonday(DateTime d) {
     final day = _normalizeDay(d);
@@ -476,17 +541,1424 @@ class ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  Future<void> _openReport(ReportSummary s) async {
-    final record = await showModalBottomSheet<ReportRecord>(
+  String _todoSummaryText() {
+    final open = _todos.where((t) => !t.done).length;
+    final done = _todos.where((t) => t.done).length;
+    if (_todos.isEmpty) return "No TODO yet";
+    return "$open open · $done done";
+  }
+
+  DateTime _todoDay(ReportTodo todo) {
+    final start = todo.startLocal;
+    if (start != null) return _normalizeDay(start);
+    final due = (todo.dueDate ?? "").trim();
+    if (due.isNotEmpty) {
+      final parsed = DateTime.tryParse("${due}T00:00:00");
+      if (parsed != null) return _normalizeDay(parsed);
+    }
+    final updated = DateTime.tryParse(todo.updatedAt)?.toLocal();
+    return _normalizeDay(updated ?? DateTime.now());
+  }
+
+  bool _todoHasSchedule(ReportTodo todo) {
+    final st = todo.startLocal;
+    final en = todo.endLocal;
+    if (st == null || en == null) return false;
+    return en.isAfter(st);
+  }
+
+  int _todoStartMinute(ReportTodo todo) {
+    final st = todo.startLocal;
+    if (st == null) return 9 * 60;
+    return (st.hour * 60 + st.minute).clamp(0, 23 * 60 + 59);
+  }
+
+  int _todoDurationMinutes(ReportTodo todo) {
+    final st = todo.startLocal;
+    final en = todo.endLocal;
+    if (st == null || en == null || !en.isAfter(st)) return 60;
+    return en.difference(st).inMinutes.clamp(15, 12 * 60);
+  }
+
+  String _todoHourLabel(int hour) => "${hour.toString().padLeft(2, "0")}:00";
+
+  String _todoDayTitle(DateTime day) {
+    const wd = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    final d = _normalizeDay(day);
+    final m = d.month.toString().padLeft(2, "0");
+    final dd = d.day.toString().padLeft(2, "0");
+    return "${wd[d.weekday - 1]} $m-$dd";
+  }
+
+  String _todoRangeLabel() {
+    if (_todoView == _TodoCalendarView.day) {
+      return _dateLocal(_todoAnchorDay);
+    }
+    if (_todoView == _TodoCalendarView.week) {
+      final start = _startOfWeekMonday(_todoAnchorDay);
+      final end = start.add(const Duration(days: 6));
+      return "${_dateLocal(start)} ~ ${_dateLocal(end)}";
+    }
+    final month = DateTime(_todoAnchorDay.year, _todoAnchorDay.month, 1);
+    return "${month.year}-${month.month.toString().padLeft(2, "0")}";
+  }
+
+  void _shiftTodoRange(int step) {
+    setState(() {
+      _dragTodoId = null;
+      _dragOriginDayIndex = null;
+      _dragOriginStartMinute = null;
+      _dragCurrentDayIndex = null;
+      _dragCurrentStartMinute = null;
+      _dragDurationMinutes = null;
+      _dragStartGlobalPosition = null;
+      if (_todoView == _TodoCalendarView.day) {
+        _todoAnchorDay = _normalizeDay(
+            _todoAnchorDay.add(Duration(days: step.sign == 0 ? 0 : step)));
+        return;
+      }
+      if (_todoView == _TodoCalendarView.week) {
+        _todoAnchorDay =
+            _normalizeDay(_todoAnchorDay.add(Duration(days: 7 * step)));
+        return;
+      }
+      final month =
+          DateTime(_todoAnchorDay.year, _todoAnchorDay.month + step, 1);
+      _todoAnchorDay = _normalizeDay(month);
+    });
+  }
+
+  List<ReportTodo> _sortTodos(Iterable<ReportTodo> todos) {
+    final out = todos.toList();
+    out.sort((a, b) {
+      if (a.done != b.done) return a.done ? 1 : -1;
+      final aScheduled = _todoHasSchedule(a);
+      final bScheduled = _todoHasSchedule(b);
+      if (aScheduled != bScheduled) return aScheduled ? -1 : 1;
+      final aMin = _todoStartMinute(a);
+      final bMin = _todoStartMinute(b);
+      if (aMin != bMin) return aMin.compareTo(bMin);
+      return b.updatedAt.compareTo(a.updatedAt);
+    });
+    return out;
+  }
+
+  List<ReportTodo> _todosForDay(DateTime day) {
+    final d = _normalizeDay(day);
+    return _sortTodos(_todos.where((t) => _todoDay(t) == d));
+  }
+
+  List<ReportTodo> _todosForMonth(DateTime anchor) {
+    final first = DateTime(anchor.year, anchor.month, 1);
+    final next = DateTime(anchor.year, anchor.month + 1, 1);
+    return _sortTodos(
+      _todos.where((t) {
+        final d = _todoDay(t);
+        return !d.isBefore(first) && d.isBefore(next);
+      }),
+    );
+  }
+
+  int _compareScheduledTodo(ReportTodo a, ReportTodo b) {
+    final aStart = _todoStartMinute(a);
+    final bStart = _todoStartMinute(b);
+    if (aStart != bStart) return aStart.compareTo(bStart);
+    final aEnd = aStart + _todoDurationMinutes(a);
+    final bEnd = bStart + _todoDurationMinutes(b);
+    if (aEnd != bEnd) return aEnd.compareTo(bEnd);
+    if (a.done != b.done) return a.done ? 1 : -1;
+    return b.updatedAt.compareTo(a.updatedAt);
+  }
+
+  List<_ScheduledTodoLayout> _buildScheduledLayoutsForDay(
+      int dayIndex, Iterable<ReportTodo> todos) {
+    final scheduled = todos.where(_todoHasSchedule).toList()
+      ..sort(_compareScheduledTodo);
+    if (scheduled.isEmpty) return const [];
+
+    final out = <_ScheduledTodoLayout>[];
+    final group = <ReportTodo>[];
+    var groupEnd = -1;
+
+    void flushGroup() {
+      if (group.isEmpty) return;
+      final columnEnds = <int>[];
+      final provisional = <_ScheduledTodoLayout>[];
+      for (final todo in group) {
+        final start = _todoStartMinute(todo);
+        final end = (start + _todoDurationMinutes(todo)).clamp(start + 1, 1440);
+        var columnIndex = -1;
+        for (var i = 0; i < columnEnds.length; i++) {
+          if (columnEnds[i] <= start) {
+            columnIndex = i;
+            columnEnds[i] = end;
+            break;
+          }
+        }
+        if (columnIndex == -1) {
+          columnEnds.add(end);
+          columnIndex = columnEnds.length - 1;
+        }
+        provisional.add(
+          _ScheduledTodoLayout(
+            todo: todo,
+            dayIndex: dayIndex,
+            startMinute: start,
+            endMinute: end,
+            columnIndex: columnIndex,
+            columnCount: 1,
+          ),
+        );
+      }
+      final columns = columnEnds.length.clamp(1, 6);
+      out.addAll(provisional.map((it) => it.withColumnCount(columns)));
+      group.clear();
+      groupEnd = -1;
+    }
+
+    for (final todo in scheduled) {
+      final start = _todoStartMinute(todo);
+      final end = (start + _todoDurationMinutes(todo)).clamp(start + 1, 1440);
+      if (group.isNotEmpty && start >= groupEnd) {
+        flushGroup();
+      }
+      group.add(todo);
+      groupEnd = groupEnd < 0 ? end : (end > groupEnd ? end : groupEnd);
+    }
+    flushGroup();
+    return out;
+  }
+
+  List<_ScheduledTodoLayout> _buildWeekLayouts(DateTime weekStart) {
+    final endExclusive = weekStart.add(const Duration(days: 7));
+    final byDay = List.generate(7, (_) => <ReportTodo>[]);
+    for (final todo in _todos) {
+      if (!_todoHasSchedule(todo)) continue;
+      final d = _todoDay(todo);
+      if (d.isBefore(weekStart) || !d.isBefore(endExclusive)) continue;
+      final dayIndex = d.difference(weekStart).inDays;
+      if (dayIndex >= 0 && dayIndex < 7) byDay[dayIndex].add(todo);
+    }
+    final out = <_ScheduledTodoLayout>[];
+    for (var i = 0; i < 7; i++) {
+      out.addAll(_buildScheduledLayoutsForDay(i, byDay[i]));
+    }
+    return out;
+  }
+
+  void _clearTodoDrag() {
+    if (!mounted) return;
+    setState(() {
+      _dragTodoId = null;
+      _dragOriginDayIndex = null;
+      _dragOriginStartMinute = null;
+      _dragCurrentDayIndex = null;
+      _dragCurrentStartMinute = null;
+      _dragDurationMinutes = null;
+      _dragStartGlobalPosition = null;
+    });
+  }
+
+  void _beginTodoDrag({
+    required ReportTodo todo,
+    required int dayIndex,
+    required int startMinute,
+    required int durationMinutes,
+    required Offset globalPosition,
+  }) {
+    if (_todoBusy) return;
+    setState(() {
+      _dragTodoId = todo.id;
+      _dragOriginDayIndex = dayIndex;
+      _dragOriginStartMinute = startMinute;
+      _dragCurrentDayIndex = dayIndex;
+      _dragCurrentStartMinute = startMinute;
+      _dragDurationMinutes = durationMinutes;
+      _dragStartGlobalPosition = globalPosition;
+    });
+  }
+
+  void _updateTodoDrag({
+    required Offset globalPosition,
+    required double dayWidth,
+    required double hourHeight,
+  }) {
+    final dragTodoId = _dragTodoId;
+    final dragOriginDayIndex = _dragOriginDayIndex;
+    final dragOriginStartMinute = _dragOriginStartMinute;
+    final dragDurationMinutes = _dragDurationMinutes;
+    final dragStartGlobalPosition = _dragStartGlobalPosition;
+    if (dragTodoId == null ||
+        dragOriginDayIndex == null ||
+        dragOriginStartMinute == null ||
+        dragDurationMinutes == null ||
+        dragStartGlobalPosition == null) {
+      return;
+    }
+
+    final dx = globalPosition.dx - dragStartGlobalPosition.dx;
+    final dy = globalPosition.dy - dragStartGlobalPosition.dy;
+    final dayDelta = (dx / dayWidth).round();
+    final minuteDelta = (dy / hourHeight * 60).round();
+    final targetDay = (dragOriginDayIndex + dayDelta).clamp(0, 6);
+    final latestStart = (24 * 60 - dragDurationMinutes).clamp(0, 24 * 60);
+    final snappedMinute =
+        _snapToQuarterHour(dragOriginStartMinute + minuteDelta)
+            .clamp(0, latestStart);
+
+    if (_dragCurrentDayIndex == targetDay &&
+        _dragCurrentStartMinute == snappedMinute) {
+      return;
+    }
+
+    setState(() {
+      _dragCurrentDayIndex = targetDay;
+      _dragCurrentStartMinute = snappedMinute;
+    });
+  }
+
+  Future<void> _finishTodoDrag({
+    required DateTime weekStart,
+    required ReportTodo todo,
+  }) async {
+    final dragTodoId = _dragTodoId;
+    if (dragTodoId == null || dragTodoId != todo.id) {
+      _clearTodoDrag();
+      return;
+    }
+
+    final sourceDay = _dragOriginDayIndex;
+    final sourceMinute = _dragOriginStartMinute;
+    final targetDay = _dragCurrentDayIndex;
+    final targetMinute = _dragCurrentStartMinute;
+    final duration = _dragDurationMinutes;
+    _clearTodoDrag();
+
+    if (sourceDay == null ||
+        sourceMinute == null ||
+        targetDay == null ||
+        targetMinute == null ||
+        duration == null) {
+      return;
+    }
+
+    final changed = sourceDay != targetDay || sourceMinute != targetMinute;
+    if (!changed) return;
+
+    final day = weekStart.add(Duration(days: targetDay));
+    final startLocal = DateTime(
+      day.year,
+      day.month,
+      day.day,
+      targetMinute ~/ 60,
+      targetMinute % 60,
+    );
+    final endLocal = startLocal.add(Duration(minutes: duration));
+
+    setState(() => _todoBusy = true);
+    try {
+      await widget.client.upsertReportTodo(
+        id: todo.id,
+        dueDate: _dateLocal(day),
+        startTs: startLocal.toUtc().toIso8601String(),
+        endTs: endLocal.toUtc().toIso8601String(),
+      );
+      await refresh(silent: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Reschedule TODO failed: $e")),
+      );
+    } finally {
+      if (mounted) setState(() => _todoBusy = false);
+    }
+  }
+
+  Future<void> _openTodoEditor({
+    ReportTodo? todo,
+    DateTime? suggestedDay,
+  }) async {
+    if (_todoBusy) return;
+
+    final contentController = TextEditingController(text: todo?.content ?? "");
+    var done = todo?.done ?? false;
+    var day = _normalizeDay(
+        suggestedDay ?? (todo != null ? _todoDay(todo) : _todoAnchorDay));
+    final existingStartLocal = todo?.startLocal;
+    var withSchedule = todo != null && _todoHasSchedule(todo);
+    var startTime = withSchedule && existingStartLocal != null
+        ? TimeOfDay.fromDateTime(existingStartLocal)
+        : const TimeOfDay(hour: 9, minute: 0);
+    var durationMinutes = withSchedule ? _todoDurationMinutes(todo) : 60;
+
+    final ok = await showDialog<bool>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: true,
-      builder: (_) => _ReportDetailSheet(
-        client: widget.client,
-        summary: s,
-        onGenerateDaily: _generateDaily,
-        onGenerateWeekly: _generateWeekly,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text(todo == null ? "Add TODO" : "Edit TODO"),
+          content: SizedBox(
+            width: 520,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: contentController,
+                  autofocus: true,
+                  minLines: 1,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: "Task",
+                    hintText: "Describe a concrete task",
+                  ),
+                ),
+                const SizedBox(height: RecorderTokens.space2),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        "Date: ${_dateLocal(day)}",
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: ctx,
+                          initialDate: day,
+                          firstDate: DateTime(2020, 1, 1),
+                          lastDate: DateTime(2100, 12, 31),
+                        );
+                        if (picked == null) return;
+                        setLocal(() => day = _normalizeDay(picked));
+                      },
+                      icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                      label: const Text("Pick date"),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: RecorderTokens.space1),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text("Set time schedule"),
+                  value: withSchedule,
+                  onChanged: (v) => setLocal(() => withSchedule = v),
+                ),
+                if (withSchedule) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final picked = await showTimePicker(
+                              context: ctx,
+                              initialTime: startTime,
+                            );
+                            if (picked == null) return;
+                            setLocal(() => startTime = picked);
+                          },
+                          icon: const Icon(Icons.schedule_outlined, size: 16),
+                          label: Text(
+                              "Start ${startTime.hour.toString().padLeft(2, "0")}:${startTime.minute.toString().padLeft(2, "0")}"),
+                        ),
+                      ),
+                      const SizedBox(width: RecorderTokens.space2),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          initialValue: durationMinutes,
+                          decoration: const InputDecoration(
+                            labelText: "Duration",
+                            isDense: true,
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 15, child: Text("15 min")),
+                            DropdownMenuItem(value: 30, child: Text("30 min")),
+                            DropdownMenuItem(value: 45, child: Text("45 min")),
+                            DropdownMenuItem(value: 60, child: Text("60 min")),
+                            DropdownMenuItem(value: 90, child: Text("90 min")),
+                            DropdownMenuItem(
+                                value: 120, child: Text("120 min")),
+                            DropdownMenuItem(
+                                value: 180, child: Text("180 min")),
+                          ],
+                          onChanged: (v) {
+                            if (v == null) return;
+                            setLocal(() => durationMinutes = v);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: RecorderTokens.space1),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text("Done"),
+                  value: done,
+                  onChanged: (v) => setLocal(() => done = v ?? false),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("Cancel"),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("Save"),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok != true) {
+      contentController.dispose();
+      return;
+    }
+
+    final content = contentController.text.trim();
+    contentController.dispose();
+    if (content.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("TODO content cannot be empty")),
+      );
+      return;
+    }
+
+    String? startTs;
+    String? endTs;
+    if (withSchedule) {
+      final startLocal = DateTime(
+          day.year, day.month, day.day, startTime.hour, startTime.minute);
+      final endLocal = startLocal.add(Duration(minutes: durationMinutes));
+      startTs = startLocal.toUtc().toIso8601String();
+      endTs = endLocal.toUtc().toIso8601String();
+    }
+
+    setState(() => _todoBusy = true);
+    try {
+      await widget.client.upsertReportTodo(
+        id: todo?.id,
+        content: content,
+        done: done,
+        dueDate: _dateLocal(day),
+        startTs: startTs ?? "",
+        endTs: endTs ?? "",
+      );
+      await refresh(silent: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Save TODO failed: $e")));
+    } finally {
+      if (mounted) setState(() => _todoBusy = false);
+    }
+  }
+
+  Future<void> _toggleTodo(ReportTodo todo, bool done) async {
+    if (_todoBusy) return;
+    setState(() => _todoBusy = true);
+    try {
+      await widget.client.upsertReportTodo(id: todo.id, done: done);
+      await refresh(silent: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Update TODO failed: $e")));
+    } finally {
+      if (mounted) setState(() => _todoBusy = false);
+    }
+  }
+
+  Future<void> _deleteTodo(ReportTodo todo) async {
+    if (_todoBusy) return;
+    setState(() => _todoBusy = true);
+    try {
+      await widget.client.deleteReportTodo(todo.id);
+      await refresh(silent: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Delete TODO failed: $e")));
+    } finally {
+      if (mounted) setState(() => _todoBusy = false);
+    }
+  }
+
+  Widget _todoChip(BuildContext context, ReportTodo todo) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasSchedule = _todoHasSchedule(todo);
+    final startMinute = _todoStartMinute(todo);
+    final hh = (startMinute ~/ 60).toString().padLeft(2, "0");
+    final mm = (startMinute % 60).toString().padLeft(2, "0");
+    final subtitle =
+        hasSchedule ? "$hh:$mm · ${_todoDurationMinutes(todo)}m" : "All-day";
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: todo.done
+            ? scheme.surfaceContainerHighest
+            : scheme.primaryContainer.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  todo.content,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        decoration: todo.done
+                            ? TextDecoration.lineThrough
+                            : TextDecoration.none,
+                      ),
+                ),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: "Edit",
+            onPressed: _todoBusy ? null : () => _openTodoEditor(todo: todo),
+            icon: const Icon(Icons.edit_outlined, size: 16),
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+          ),
+          IconButton(
+            tooltip: todo.done ? "Mark open" : "Mark done",
+            onPressed: _todoBusy ? null : () => _toggleTodo(todo, !todo.done),
+            icon: Icon(
+              todo.done
+                  ? Icons.check_circle_outline
+                  : Icons.radio_button_unchecked,
+              size: 16,
+            ),
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+          ),
+          IconButton(
+            tooltip: "Delete",
+            onPressed: _todoBusy ? null : () => _deleteTodo(todo),
+            icon: const Icon(Icons.delete_outline, size: 16),
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _todoDayView(BuildContext context, DateTime day) {
+    final todos = _todosForDay(day);
+    if (todos.isEmpty) {
+      return Center(
+        child: Text(
+          "No TODO on ${_dateLocal(day)}",
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      );
+    }
+    final scheduled = todos.where(_todoHasSchedule).toList();
+    final unscheduled = todos.where((t) => !_todoHasSchedule(t)).toList();
+    const leftAxisWidth = 54.0;
+    const hourHeight = 54.0;
+    const headerHeight = 8.0;
+    final gridHeight = 24 * hourHeight;
+    final layouts = _buildScheduledLayoutsForDay(0, scheduled);
+    final isToday = _isSameDay(day, DateTime.now());
+    final now = DateTime.now();
+    final nowMinute = now.hour * 60 + now.minute + now.second / 60.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (scheduled.isNotEmpty)
+          Expanded(
+            child: SingleChildScrollView(
+              child: SizedBox(
+                height: headerHeight + gridHeight,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final dayWidth = (constraints.maxWidth - leftAxisWidth)
+                        .clamp(180.0, 9999.0);
+                    return Stack(
+                      children: [
+                        for (var slot = 0; slot <= 48; slot++)
+                          Positioned(
+                            left: leftAxisWidth,
+                            right: 0,
+                            top: headerHeight + slot * (hourHeight / 2),
+                            child: Divider(
+                              height: 1,
+                              thickness: slot % 2 == 0 ? 1 : 0.7,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outline
+                                  .withValues(
+                                      alpha: slot % 2 == 0 ? 0.12 : 0.07),
+                            ),
+                          ),
+                        for (var h = 0; h < 24; h++)
+                          Positioned(
+                            left: 0,
+                            top: headerHeight + h * hourHeight - 8,
+                            width: leftAxisWidth - 6,
+                            child: Text(
+                              _todoHourLabel(h),
+                              textAlign: TextAlign.right,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                            ),
+                          ),
+                        for (final layout in layouts)
+                          Builder(
+                            builder: (context) {
+                              final top = headerHeight +
+                                  (layout.startMinute / 60.0) * hourHeight;
+                              final height =
+                                  ((layout.endMinute - layout.startMinute) /
+                                          60.0) *
+                                      hourHeight;
+                              final columns = layout.columnCount <= 0
+                                  ? 1
+                                  : layout.columnCount;
+                              final innerWidth =
+                                  (dayWidth - 8).clamp(40.0, 9999.0);
+                              final rawColumnWidth = innerWidth / columns;
+                              final eventWidth =
+                                  (rawColumnWidth - 4).clamp(36.0, innerWidth);
+                              final left = leftAxisWidth +
+                                  4 +
+                                  rawColumnWidth * layout.columnIndex;
+                              final todo = layout.todo;
+                              return Positioned(
+                                left: left,
+                                top: top,
+                                width: eventWidth.toDouble(),
+                                height: height.clamp(26, 9999),
+                                child: InkWell(
+                                  onTap: _todoBusy
+                                      ? null
+                                      : () => _openTodoEditor(todo: todo),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: todo.done
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .surfaceContainerHighest
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .primaryContainer,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .outline
+                                            .withValues(alpha: 0.18),
+                                      ),
+                                    ),
+                                    padding: const EdgeInsets.all(6),
+                                    child: Text(
+                                      todo.content,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            decoration: todo.done
+                                                ? TextDecoration.lineThrough
+                                                : TextDecoration.none,
+                                          ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        if (isToday)
+                          Positioned(
+                            left: leftAxisWidth + 2,
+                            right: 2,
+                            top: headerHeight + (nowMinute / 60.0) * hourHeight,
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context).colorScheme.error,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Container(
+                                    height: 1.4,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          )
+        else
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(vertical: RecorderTokens.space2),
+            child: Text(
+              "No scheduled TODO",
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+        if (unscheduled.isNotEmpty) ...[
+          const SizedBox(height: RecorderTokens.space2),
+          Text("Unscheduled", style: Theme.of(context).textTheme.labelMedium),
+          const SizedBox(height: 6),
+          Column(
+            children: [
+              for (final t in unscheduled) _todoChip(context, t),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _todoWeekView(BuildContext context, DateTime day) {
+    final start = _startOfWeekMonday(day);
+    final days = List.generate(7, (i) => start.add(Duration(days: i)));
+    final endExclusive = start.add(const Duration(days: 7));
+    final scheduledLayouts = _buildWeekLayouts(start);
+    final unscheduled = _sortTodos(
+      _todos.where((t) {
+        if (_todoHasSchedule(t)) return false;
+        final d = _todoDay(t);
+        return !d.isBefore(start) && d.isBefore(endExclusive);
+      }),
+    );
+
+    const leftAxisWidth = 56.0;
+    const headerHeight = 38.0;
+    const hourHeight = 56.0;
+    final gridHeight = 24 * hourHeight;
+    final today = _normalizeDay(DateTime.now());
+    final now = DateTime.now();
+    final todayIndex = (!today.isBefore(start) && today.isBefore(endExclusive))
+        ? today.difference(start).inDays
+        : -1;
+    final nowMinute = now.hour * 60 + now.minute + now.second / 60.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final dayWidth = (((constraints.maxWidth - leftAxisWidth) / 7)
+                      .clamp(112.0, 220.0))
+                  .toDouble();
+              final minWidth = leftAxisWidth + dayWidth * 7;
+              final width = constraints.maxWidth > minWidth
+                  ? constraints.maxWidth
+                  : minWidth;
+
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: width,
+                  child: SingleChildScrollView(
+                    child: SizedBox(
+                      height: headerHeight + gridHeight,
+                      child: Stack(
+                        children: [
+                          for (var i = 0; i < 7; i++)
+                            if (_isSameDay(days[i], today))
+                              Positioned(
+                                left: leftAxisWidth + i * dayWidth,
+                                top: 0,
+                                width: dayWidth,
+                                height: headerHeight + gridHeight,
+                                child: Container(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .primary
+                                      .withValues(alpha: 0.045),
+                                ),
+                              ),
+                          for (var slot = 0; slot <= 48; slot++)
+                            Positioned(
+                              left: leftAxisWidth,
+                              right: 0,
+                              top: headerHeight + slot * (hourHeight / 2),
+                              child: Divider(
+                                height: 1,
+                                thickness: slot % 2 == 0 ? 1 : 0.7,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .outline
+                                    .withValues(
+                                        alpha: slot % 2 == 0 ? 0.12 : 0.07),
+                              ),
+                            ),
+                          for (var i = 0; i <= 7; i++)
+                            Positioned(
+                              top: 0,
+                              bottom: 0,
+                              left: leftAxisWidth + i * dayWidth,
+                              child: VerticalDivider(
+                                width: 1,
+                                thickness: 1,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .outline
+                                    .withValues(alpha: 0.12),
+                              ),
+                            ),
+                          for (var i = 0; i < 7; i++)
+                            Positioned(
+                              left: leftAxisWidth + i * dayWidth,
+                              top: 0,
+                              width: dayWidth,
+                              height: headerHeight,
+                              child: InkWell(
+                                onTap: () => setState(() {
+                                  _dragTodoId = null;
+                                  _dragOriginDayIndex = null;
+                                  _dragOriginStartMinute = null;
+                                  _dragCurrentDayIndex = null;
+                                  _dragCurrentStartMinute = null;
+                                  _dragDurationMinutes = null;
+                                  _dragStartGlobalPosition = null;
+                                  _todoAnchorDay = days[i];
+                                  _todoView = _TodoCalendarView.day;
+                                }),
+                                child: Center(
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: _isSameDay(days[i], today)
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .primaryContainer
+                                              .withValues(alpha: 0.75)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    child: Text(
+                                      _todoDayTitle(days[i]),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelMedium
+                                          ?.copyWith(
+                                            color: _isSameDay(days[i], today)
+                                                ? Theme.of(context)
+                                                    .colorScheme
+                                                    .onPrimaryContainer
+                                                : null,
+                                          ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          for (var h = 0; h < 24; h++)
+                            Positioned(
+                              left: 0,
+                              top: headerHeight + h * hourHeight - 8,
+                              width: leftAxisWidth - 6,
+                              child: Text(
+                                _todoHourLabel(h),
+                                textAlign: TextAlign.right,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
+                              ),
+                            ),
+                          for (final layout in scheduledLayouts)
+                            Builder(
+                              builder: (context) {
+                                final todo = layout.todo;
+                                final isDraggingTodo = _dragTodoId == todo.id;
+                                final visualDayIndex = isDraggingTodo
+                                    ? (_dragCurrentDayIndex ?? layout.dayIndex)
+                                    : layout.dayIndex;
+                                final visualStartMinute = isDraggingTodo
+                                    ? (_dragCurrentStartMinute ??
+                                        layout.startMinute)
+                                    : layout.startMinute;
+                                final visualDurationMinute = isDraggingTodo
+                                    ? (_dragDurationMinutes ??
+                                        (layout.endMinute - layout.startMinute))
+                                    : (layout.endMinute - layout.startMinute);
+
+                                final top = headerHeight +
+                                    (visualStartMinute / 60.0) * hourHeight;
+                                final height =
+                                    (visualDurationMinute / 60.0) * hourHeight;
+                                final columns = isDraggingTodo
+                                    ? 1
+                                    : (layout.columnCount <= 0
+                                        ? 1
+                                        : layout.columnCount);
+                                final innerWidth =
+                                    (dayWidth - 8).clamp(40.0, 9999.0);
+                                final rawColumnWidth = innerWidth / columns;
+                                final eventWidth = (rawColumnWidth - 4)
+                                    .clamp(30.0, innerWidth)
+                                    .toDouble();
+                                return Positioned(
+                                  left: leftAxisWidth +
+                                      visualDayIndex * dayWidth +
+                                      4 +
+                                      rawColumnWidth *
+                                          (isDraggingTodo
+                                              ? 0
+                                              : layout.columnIndex),
+                                  top: top,
+                                  width: eventWidth,
+                                  height: height.clamp(24, 9999),
+                                  child: GestureDetector(
+                                    onTap: _todoBusy
+                                        ? null
+                                        : () => _openTodoEditor(todo: todo),
+                                    onPanStart: _todoBusy
+                                        ? null
+                                        : (details) => _beginTodoDrag(
+                                              todo: todo,
+                                              dayIndex: layout.dayIndex,
+                                              startMinute: layout.startMinute,
+                                              durationMinutes:
+                                                  layout.endMinute -
+                                                      layout.startMinute,
+                                              globalPosition:
+                                                  details.globalPosition,
+                                            ),
+                                    onPanUpdate: _todoBusy
+                                        ? null
+                                        : (details) => _updateTodoDrag(
+                                              globalPosition:
+                                                  details.globalPosition,
+                                              dayWidth: dayWidth,
+                                              hourHeight: hourHeight,
+                                            ),
+                                    onPanEnd: _todoBusy
+                                        ? null
+                                        : (_) => _finishTodoDrag(
+                                              weekStart: start,
+                                              todo: todo,
+                                            ),
+                                    onPanCancel: _clearTodoDrag,
+                                    child: AnimatedOpacity(
+                                      duration:
+                                          const Duration(milliseconds: 120),
+                                      opacity: isDraggingTodo ? 0.9 : 1,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: todo.done
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .surfaceContainerHighest
+                                              : Theme.of(context)
+                                                  .colorScheme
+                                                  .primaryContainer,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .outline
+                                                .withValues(alpha: 0.18),
+                                          ),
+                                        ),
+                                        padding: const EdgeInsets.all(6),
+                                        child: Text(
+                                          todo.content,
+                                          maxLines: 3,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelSmall
+                                              ?.copyWith(
+                                                decoration: todo.done
+                                                    ? TextDecoration.lineThrough
+                                                    : TextDecoration.none,
+                                              ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          if (todayIndex >= 0)
+                            Positioned(
+                              left: leftAxisWidth + todayIndex * dayWidth + 2,
+                              width: dayWidth - 4,
+                              top: headerHeight +
+                                  (nowMinute / 60.0) * hourHeight,
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 7,
+                                    height: 7,
+                                    decoration: BoxDecoration(
+                                      color:
+                                          Theme.of(context).colorScheme.error,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Container(
+                                      height: 1.4,
+                                      color:
+                                          Theme.of(context).colorScheme.error,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (unscheduled.isNotEmpty) ...[
+          const SizedBox(height: RecorderTokens.space2),
+          Text("Unscheduled", style: Theme.of(context).textTheme.labelMedium),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: RecorderTokens.space2,
+            runSpacing: RecorderTokens.space2,
+            children: [
+              for (final t in unscheduled)
+                ActionChip(
+                  label: Text(
+                    t.content,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onPressed: _todoBusy ? null : () => _openTodoEditor(todo: t),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _todoMonthView(BuildContext context, DateTime anchor) {
+    final firstDay = DateTime(anchor.year, anchor.month, 1);
+    final monthStartGrid = _startOfWeekMonday(firstDay);
+    final cells =
+        List.generate(42, (i) => monthStartGrid.add(Duration(days: i)));
+    const weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    final today = _normalizeDay(DateTime.now());
+    final byDay = <DateTime, List<ReportTodo>>{};
+    for (final t in _todosForMonth(anchor)) {
+      final d = _todoDay(t);
+      byDay.putIfAbsent(d, () => []).add(t);
+    }
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            for (final wd in weekday)
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      wd,
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        GridView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 1.12,
+          ),
+          itemCount: cells.length,
+          itemBuilder: (context, index) {
+            final day = _normalizeDay(cells[index]);
+            final inMonth = day.month == anchor.month;
+            final list = _sortTodos(byDay[day] ?? const []);
+            final openCount = list.where((t) => !t.done).length;
+            final doneCount = list.length - openCount;
+            final isToday = _isSameDay(day, today);
+            return InkWell(
+              onTap: () => setState(() {
+                _dragTodoId = null;
+                _dragOriginDayIndex = null;
+                _dragOriginStartMinute = null;
+                _dragCurrentDayIndex = null;
+                _dragCurrentStartMinute = null;
+                _dragDurationMinutes = null;
+                _dragStartGlobalPosition = null;
+                _todoAnchorDay = day;
+                _todoView = _TodoCalendarView.day;
+              }),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isToday
+                      ? Theme.of(context)
+                          .colorScheme
+                          .primaryContainer
+                          .withValues(alpha: 0.35)
+                      : null,
+                  borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
+                  border: Border.all(
+                    color: isToday
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context)
+                            .colorScheme
+                            .outline
+                            .withValues(alpha: 0.14),
+                  ),
+                ),
+                padding: const EdgeInsets.all(RecorderTokens.space2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      day.day.toString(),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: inMonth
+                                ? null
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    for (final t in list.take(2))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Text(
+                          "• ${t.content}",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ),
+                    if (list.length > 2)
+                      Text(
+                        "+${list.length - 2}",
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    if (list.isNotEmpty) ...[
+                      const Spacer(),
+                      Text(
+                        "$openCount open · $doneCount done",
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _todoPlannerSection(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: EdgeInsets.zero,
+      initiallyExpanded: true,
+      title: const Text("TODO planner"),
+      subtitle: Text(_todoSummaryText()),
+      children: [
+        const SizedBox(height: RecorderTokens.space2),
+        Row(
+          children: [
+            Expanded(
+              child: SegmentedButton<_TodoCalendarView>(
+                segments: const [
+                  ButtonSegment(
+                      value: _TodoCalendarView.day, label: Text("Day")),
+                  ButtonSegment(
+                      value: _TodoCalendarView.week, label: Text("Week")),
+                  ButtonSegment(
+                      value: _TodoCalendarView.month, label: Text("Month")),
+                ],
+                selected: {_todoView},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) => setState(() {
+                  _dragTodoId = null;
+                  _dragOriginDayIndex = null;
+                  _dragOriginStartMinute = null;
+                  _dragCurrentDayIndex = null;
+                  _dragCurrentStartMinute = null;
+                  _dragDurationMinutes = null;
+                  _dragStartGlobalPosition = null;
+                  _todoView = s.first;
+                }),
+              ),
+            ),
+            const SizedBox(width: RecorderTokens.space2),
+            FilledButton.icon(
+              onPressed: _todoBusy ? null : () => _openTodoEditor(),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text("Add"),
+            ),
+          ],
+        ),
+        if (_todoView == _TodoCalendarView.week) ...[
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              "Tip: drag a scheduled block to reschedule (snap: 15m).",
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ],
+        const SizedBox(height: RecorderTokens.space2),
+        Row(
+          children: [
+            IconButton(
+              tooltip: "Previous",
+              onPressed: _todoBusy ? null : () => _shiftTodoRange(-1),
+              icon: const Icon(Icons.chevron_left),
+            ),
+            Expanded(
+              child: Text(
+                _todoRangeLabel(),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+            IconButton(
+              tooltip: "Next",
+              onPressed: _todoBusy ? null : () => _shiftTodoRange(1),
+              icon: const Icon(Icons.chevron_right),
+            ),
+            const SizedBox(width: RecorderTokens.space1),
+            OutlinedButton(
+              onPressed: _todoBusy
+                  ? null
+                  : () => setState(() {
+                        _dragTodoId = null;
+                        _dragOriginDayIndex = null;
+                        _dragOriginStartMinute = null;
+                        _dragCurrentDayIndex = null;
+                        _dragCurrentStartMinute = null;
+                        _dragDurationMinutes = null;
+                        _dragStartGlobalPosition = null;
+                        _todoAnchorDay = _normalizeDay(DateTime.now());
+                      }),
+              child: const Text("Today"),
+            ),
+          ],
+        ),
+        const SizedBox(height: RecorderTokens.space2),
+        if (_todoView == _TodoCalendarView.day)
+          SizedBox(height: 420, child: _todoDayView(context, _todoAnchorDay))
+        else if (_todoView == _TodoCalendarView.week)
+          SizedBox(height: 460, child: _todoWeekView(context, _todoAnchorDay))
+        else
+          _todoMonthView(context, _todoAnchorDay),
+        const SizedBox(height: RecorderTokens.space2),
+        if (_todos.isNotEmpty)
+          Wrap(
+            spacing: RecorderTokens.space2,
+            runSpacing: RecorderTokens.space2,
+            children: [
+              for (final todo
+                  in _sortTodos(_todos).where((t) => !t.done).take(6))
+                ActionChip(
+                  avatar: const Icon(Icons.task_alt_outlined, size: 16),
+                  label: Text(
+                    todo.content,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onPressed:
+                      _todoBusy ? null : () => _openTodoEditor(todo: todo),
+                ),
+            ],
+          )
+        else
+          Text(
+            "Add TODO items with date/time, then reports will focus on guidance instead of activity流水账.",
+            style: Theme.of(context)
+                .textTheme
+                .labelMedium
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _openReport(ReportSummary s) async {
+    final record = await Navigator.of(context).push<ReportRecord>(
+      MaterialPageRoute(
+        builder: (_) => _ReportDetailPage(
+          client: widget.client,
+          summary: s,
+          onGenerateDaily: _generateDaily,
+          onGenerateWeekly: _generateWeekly,
+        ),
       ),
     );
     if (record != null) {
@@ -799,6 +2271,8 @@ class ReportsScreenState extends State<ReportsScreen> {
                   ],
                 ),
                 const SizedBox(height: RecorderTokens.space3),
+                _todoPlannerSection(context),
+                const SizedBox(height: RecorderTokens.space2),
                 ExpansionTile(
                   tilePadding: EdgeInsets.zero,
                   childrenPadding: EdgeInsets.zero,
@@ -1096,6 +2570,40 @@ class ReportsScreenState extends State<ReportsScreen> {
             onTap: () => _openReport(s),
           );
         },
+      ),
+    );
+  }
+}
+
+class _ReportDetailPage extends StatelessWidget {
+  const _ReportDetailPage({
+    required this.client,
+    required this.summary,
+    required this.onGenerateDaily,
+    required this.onGenerateWeekly,
+  });
+
+  final CoreClient client;
+  final ReportSummary summary;
+  final Future<void> Function(DateTime day) onGenerateDaily;
+  final Future<void> Function(DateTime weekStart) onGenerateWeekly;
+
+  String _periodText() {
+    if (summary.kind == "daily") return summary.periodStart;
+    return "${summary.periodStart} ~ ${summary.periodEnd}";
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text("Report ${_periodText()}")),
+      body: SafeArea(
+        child: _ReportDetailSheet(
+          client: client,
+          summary: summary,
+          onGenerateDaily: onGenerateDaily,
+          onGenerateWeekly: onGenerateWeekly,
+        ),
       ),
     );
   }
@@ -1533,232 +3041,223 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return SafeArea(
-      child: FractionallySizedBox(
-        heightFactor: 0.92,
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: RecorderTokens.space4,
-            right: RecorderTokens.space4,
-            bottom: RecorderTokens.space4 +
-                MediaQuery.of(context).viewInsets.bottom,
-            top: RecorderTokens.space2,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (_loading)
-                const Expanded(
-                    child: Center(child: CircularProgressIndicator()))
-              else if (_error != null)
-                Expanded(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 640),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: scheme.errorContainer.withValues(alpha: 0.35),
-                          borderRadius:
-                              BorderRadius.circular(RecorderTokens.radiusM),
-                          border: Border.all(
-                              color: scheme.error.withValues(alpha: 0.25)),
+    return Padding(
+      padding: EdgeInsets.only(
+        left: RecorderTokens.space4,
+        right: RecorderTokens.space4,
+        bottom:
+            RecorderTokens.space4 + MediaQuery.of(context).viewInsets.bottom,
+        top: RecorderTokens.space2,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_loading)
+            const Expanded(child: Center(child: CircularProgressIndicator()))
+          else if (_error != null)
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: scheme.errorContainer.withValues(alpha: 0.35),
+                      borderRadius:
+                          BorderRadius.circular(RecorderTokens.radiusM),
+                      border: Border.all(
+                          color: scheme.error.withValues(alpha: 0.25)),
+                    ),
+                    padding: const EdgeInsets.all(RecorderTokens.space3),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.error_outline,
+                            size: 18, color: scheme.error),
+                        const SizedBox(width: RecorderTokens.space2),
+                        Expanded(child: Text("Load failed: $_error")),
+                        const SizedBox(width: RecorderTokens.space2),
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : _load,
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: const Text("Retry"),
                         ),
-                        padding: const EdgeInsets.all(RecorderTokens.space3),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.error_outline,
-                                size: 18, color: scheme.error),
-                            const SizedBox(width: RecorderTokens.space2),
-                            Expanded(child: Text("Load failed: $_error")),
-                            const SizedBox(width: RecorderTokens.space2),
-                            OutlinedButton.icon(
-                              onPressed: _busy ? null : _load,
-                              icon: const Icon(Icons.refresh, size: 18),
-                              label: const Text("Retry"),
-                            ),
-                          ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else ...[
+            Builder(
+              builder: (context) {
+                final r = _record;
+                if (r == null) {
+                  return const Expanded(child: SizedBox.shrink());
+                }
+
+                final out = (r.outputMd ?? "").trim();
+                final prompt = (r.prompt ?? "").trim();
+                final inputJson = (r.inputJson ?? "").trim();
+                final err = (r.error ?? "").trim();
+                final generatedAt = _generatedAtLocal(r.generatedAt);
+                final providerHost = _providerHost(r.providerUrl);
+                final isWideDesktop = _isWideDesktop(context);
+
+                final tabs = <_ReportTabData>[
+                  _ReportTabData(
+                    label: "Markdown",
+                    icon: Icons.article_outlined,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(RecorderTokens.space3),
+                      child: MarkdownBody(
+                        data: out.isEmpty ? "*(No output)*" : out,
+                        selectable: true,
+                        extensionSet: md.ExtensionSet.gitHubFlavored,
+                        styleSheet: MarkdownStyleSheet.fromTheme(
+                          Theme.of(context),
+                        ).copyWith(
+                          code: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(fontFamily: "monospace"),
                         ),
                       ),
                     ),
                   ),
-                )
-              else ...[
-                Builder(
-                  builder: (context) {
-                    final r = _record;
-                    if (r == null) {
-                      return const Expanded(child: SizedBox.shrink());
-                    }
+                ];
+                if (prompt.isNotEmpty) {
+                  tabs.add(
+                    _ReportTabData(
+                      label: "Prompt",
+                      icon: Icons.tune_outlined,
+                      child: _textPanel(context, prompt, monospace: true),
+                    ),
+                  );
+                }
+                if (inputJson.isNotEmpty) {
+                  tabs.add(
+                    _ReportTabData(
+                      label: "Input",
+                      icon: Icons.data_object_outlined,
+                      child: _textPanel(context, _prettyJson(inputJson),
+                          monospace: true),
+                    ),
+                  );
+                }
+                if (err.isNotEmpty) {
+                  tabs.add(
+                    _ReportTabData(
+                      label: "Error",
+                      icon: Icons.warning_amber_rounded,
+                      child: _textPanel(context, err),
+                    ),
+                  );
+                }
 
-                    final out = (r.outputMd ?? "").trim();
-                    final prompt = (r.prompt ?? "").trim();
-                    final inputJson = (r.inputJson ?? "").trim();
-                    final err = (r.error ?? "").trim();
-                    final generatedAt = _generatedAtLocal(r.generatedAt);
-                    final providerHost = _providerHost(r.providerUrl);
-                    final isWideDesktop = _isWideDesktop(context);
-
-                    final tabs = <_ReportTabData>[
-                      _ReportTabData(
-                        label: "Markdown",
-                        icon: Icons.article_outlined,
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(RecorderTokens.space3),
-                          child: MarkdownBody(
-                            data: out.isEmpty ? "*(No output)*" : out,
-                            selectable: true,
-                            extensionSet: md.ExtensionSet.gitHubFlavored,
-                            styleSheet: MarkdownStyleSheet.fromTheme(
-                              Theme.of(context),
-                            ).copyWith(
-                              code: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(fontFamily: "monospace"),
-                            ),
-                          ),
-                        ),
+                return Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Report",
+                          style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: RecorderTokens.space1),
+                      Text(
+                        _periodText(r),
+                        style: Theme.of(context).textTheme.titleSmall,
                       ),
-                    ];
-                    if (prompt.isNotEmpty) {
-                      tabs.add(
-                        _ReportTabData(
-                          label: "Prompt",
-                          icon: Icons.tune_outlined,
-                          child: _textPanel(context, prompt, monospace: true),
-                        ),
-                      );
-                    }
-                    if (inputJson.isNotEmpty) {
-                      tabs.add(
-                        _ReportTabData(
-                          label: "Input",
-                          icon: Icons.data_object_outlined,
-                          child: _textPanel(context, _prettyJson(inputJson),
-                              monospace: true),
-                        ),
-                      );
-                    }
-                    if (err.isNotEmpty) {
-                      tabs.add(
-                        _ReportTabData(
-                          label: "Error",
-                          icon: Icons.warning_amber_rounded,
-                          child: _textPanel(context, err),
-                        ),
-                      );
-                    }
-
-                    return Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Report",
-                              style: Theme.of(context).textTheme.titleMedium),
-                          const SizedBox(height: RecorderTokens.space1),
-                          Text(
-                            _periodText(r),
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          const SizedBox(height: RecorderTokens.space2),
-                          if (!isWideDesktop) ...[
-                            Wrap(
-                              spacing: RecorderTokens.space2,
-                              runSpacing: RecorderTokens.space2,
-                              children: [
-                                _metaChip(
-                                  context: context,
-                                  icon: r.kind == "daily"
-                                      ? Icons.today_outlined
-                                      : Icons.date_range_outlined,
-                                  label: r.kind == "daily" ? "Daily" : "Weekly",
-                                ),
-                                _metaChip(
-                                  context: context,
-                                  icon: Icons.schedule_outlined,
-                                  label: "Generated $generatedAt",
-                                ),
-                                if ((r.model ?? "").trim().isNotEmpty)
-                                  _metaChip(
-                                    context: context,
-                                    icon: Icons.memory_outlined,
-                                    label: r.model!.trim(),
-                                  ),
-                                if (providerHost.isNotEmpty)
-                                  _metaChip(
-                                    context: context,
-                                    icon: Icons.cloud_outlined,
-                                    label: providerHost,
-                                  ),
-                                _metaChip(
-                                  context: context,
-                                  icon: out.isEmpty
-                                      ? Icons.hourglass_empty_outlined
-                                      : Icons.check_circle_outline,
-                                  label: out.isEmpty
-                                      ? "No output"
-                                      : "Output ready",
-                                ),
-                                if (err.isNotEmpty)
-                                  _metaChip(
-                                    context: context,
-                                    icon: Icons.error_outline,
-                                    label: "Has error",
-                                  ),
-                              ],
+                      const SizedBox(height: RecorderTokens.space2),
+                      if (!isWideDesktop) ...[
+                        Wrap(
+                          spacing: RecorderTokens.space2,
+                          runSpacing: RecorderTokens.space2,
+                          children: [
+                            _metaChip(
+                              context: context,
+                              icon: r.kind == "daily"
+                                  ? Icons.today_outlined
+                                  : Icons.date_range_outlined,
+                              label: r.kind == "daily" ? "Daily" : "Weekly",
                             ),
-                            const SizedBox(height: RecorderTokens.space2),
-                            _compactActions(out),
-                            const SizedBox(height: RecorderTokens.space2),
-                            Expanded(
-                              child: _tabbedContent(context, scheme, tabs),
+                            _metaChip(
+                              context: context,
+                              icon: Icons.schedule_outlined,
+                              label: "Generated $generatedAt",
                             ),
-                          ] else ...[
-                            Expanded(
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child:
-                                        _tabbedContent(context, scheme, tabs),
-                                  ),
-                                  const SizedBox(width: RecorderTokens.space3),
-                                  SizedBox(
-                                    width: 320,
-                                    child: SingleChildScrollView(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          _wideMetaPanel(
-                                            context: context,
-                                            report: r,
-                                            generatedAt: generatedAt,
-                                            providerHost: providerHost,
-                                            outputMarkdown: out,
-                                            errorText: err,
-                                          ),
-                                          const SizedBox(
-                                              height: RecorderTokens.space2),
-                                          _wideActionPanel(context, out),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                            if ((r.model ?? "").trim().isNotEmpty)
+                              _metaChip(
+                                context: context,
+                                icon: Icons.memory_outlined,
+                                label: r.model!.trim(),
                               ),
+                            if (providerHost.isNotEmpty)
+                              _metaChip(
+                                context: context,
+                                icon: Icons.cloud_outlined,
+                                label: providerHost,
+                              ),
+                            _metaChip(
+                              context: context,
+                              icon: out.isEmpty
+                                  ? Icons.hourglass_empty_outlined
+                                  : Icons.check_circle_outline,
+                              label: out.isEmpty ? "No output" : "Output ready",
                             ),
+                            if (err.isNotEmpty)
+                              _metaChip(
+                                context: context,
+                                icon: Icons.error_outline,
+                                label: "Has error",
+                              ),
                           ],
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ],
-          ),
-        ),
+                        ),
+                        const SizedBox(height: RecorderTokens.space2),
+                        _compactActions(out),
+                        const SizedBox(height: RecorderTokens.space2),
+                        Expanded(
+                          child: _tabbedContent(context, scheme, tabs),
+                        ),
+                      ] else ...[
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: _tabbedContent(context, scheme, tabs),
+                              ),
+                              const SizedBox(width: RecorderTokens.space3),
+                              SizedBox(
+                                width: 320,
+                                child: SingleChildScrollView(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _wideMetaPanel(
+                                        context: context,
+                                        report: r,
+                                        generatedAt: generatedAt,
+                                        providerHost: providerHost,
+                                        outputMarkdown: out,
+                                        errorText: err,
+                                      ),
+                                      const SizedBox(
+                                          height: RecorderTokens.space2),
+                                      _wideActionPanel(context, out),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ],
       ),
     );
   }

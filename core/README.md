@@ -29,6 +29,10 @@ cargo run -p recorder_core -- --listen 127.0.0.1:17600 --db ./data/recorder-core
 - `POST /data/wipe`（一键全清：删除所有 events + block reviews；保留 privacy rules + settings）
 - `GET /export/markdown?date=YYYY-MM-DD&tz_offset_minutes=0`
 - `GET /export/csv?date=YYYY-MM-DD&tz_offset_minutes=0`
+- `GET /reports/settings` / `POST /reports/settings`
+- `POST /reports/generate/daily` / `POST /reports/generate/weekly`
+- `GET /reports` / `GET /reports/:id` / `DELETE /reports/:id`
+- `GET /reports/todos` / `POST /reports/todos` / `DELETE /reports/todos/:id`（日报/周报的 TODO 驱动输入）
 
 说明：
 - `domain` 规则会匹配子域名（例如 `youtube.com` 也会命中 `m.youtube.com`）

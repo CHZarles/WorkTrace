@@ -45,3 +45,4 @@ recorderphone_ui/**/.flutter-plugins
 recorderphone_ui/**/.flutter-plugins-dependencies
 recorderphone_ui/**/.idea/
 recorderphone_ui/pubspec.lock
+package-installer.log
