@@ -27,7 +27,6 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 CloseApplications=yes
-ForceCloseApplications=yes
 RestartApplications=no
 WizardStyle=modern
 Compression=lzma2
