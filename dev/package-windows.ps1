@@ -220,15 +220,16 @@ function Build-Installer {
   $version = Get-InstallerVersion
   $outputBase = "RecorderPhone-Setup"
   Write-Host "[package] build installer ($version) -> $(Join-Path $OutputDir "$outputBase.exe")"
-  & $iscc `
-    "/DAppVersion=$version" `
-    "/DAppSourceDir=$SourceDir" `
-    "/DOutputDir=$OutputDir" `
-    "/DOutputBaseFilename=$outputBase" `
-    $issPath
+  $null = (& $iscc `
+      "/DAppVersion=$version" `
+      "/DAppSourceDir=$SourceDir" `
+      "/DOutputDir=$OutputDir" `
+      "/DOutputBaseFilename=$outputBase" `
+      $issPath) | Out-Host
+  $isccExitCode = $LASTEXITCODE
 
-  if ($LASTEXITCODE -ne 0) {
-    throw "Installer build failed (iscc exit code $LASTEXITCODE)."
+  if ($isccExitCode -ne 0) {
+    throw "Installer build failed (iscc exit code $isccExitCode)."
   }
 
   $setupPath = Join-Path $OutputDir "$outputBase.exe"
@@ -583,6 +584,13 @@ if ($Installer) {
     -RepoRoot $RepoRoot `
     -SourceDir $OutDir `
     -OutputDir (Split-Path $OutDir -Parent)
+  if ($setupPath -is [array]) {
+    $setupPath = ($setupPath `
+      | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } `
+      | Select-Object -Last 1)
+  }
+  if ($null -eq $setupPath) { $setupPath = "" }
+  $setupPath = $setupPath.ToString().Trim()
 }
 
 Write-Host "[package] done."
@@ -595,6 +603,6 @@ if (Test-Path $distExe) {
 if ($Zip) {
   Write-Host "  Zip:   $zipPath"
 }
-if ($Installer -and (Test-Path $setupPath)) {
+if ($Installer -and -not [string]::IsNullOrWhiteSpace($setupPath) -and (Test-Path $setupPath)) {
   Write-Host "  Setup: $setupPath"
 }
