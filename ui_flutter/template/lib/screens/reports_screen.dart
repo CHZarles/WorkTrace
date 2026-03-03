@@ -51,12 +51,14 @@ class ReportsScreen extends StatefulWidget {
     required this.serverUrl,
     this.onOpenSettings,
     this.isActive = false,
+    this.plannerMode = false,
   });
 
   final CoreClient client;
   final String serverUrl;
   final VoidCallback? onOpenSettings;
   final bool isActive;
+  final bool plannerMode;
 
   @override
   State<ReportsScreen> createState() => ReportsScreenState();
@@ -2445,10 +2447,33 @@ class ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  Widget _plannerPrimaryCard(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(RecorderTokens.space4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Planner", style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: RecorderTokens.space1),
+            Text(
+              "Manage your TODOs in day / week / month calendar views.",
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: RecorderTokens.space3),
+            _todoPlannerSection(context),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
+      final unavailableTitle =
+          widget.plannerMode ? "Planner unavailable" : "Reports unavailable";
       final msg = _error ?? "";
       final auto = _serverLooksLikeLocalhost() && _isTransientError(msg);
       final is404 = msg.contains("http_404");
@@ -2459,7 +2484,7 @@ class ReportsScreenState extends State<ReportsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Reports unavailable",
+            Text(unavailableTitle,
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: RecorderTokens.space2),
             Text("Server URL: ${widget.serverUrl}",
@@ -2504,6 +2529,18 @@ class ReportsScreenState extends State<ReportsScreen> {
                   ),
               ],
             ),
+          ],
+        ),
+      );
+    }
+
+    if (widget.plannerMode) {
+      return RefreshIndicator(
+        onRefresh: () => refresh(silent: true),
+        child: ListView(
+          padding: const EdgeInsets.all(RecorderTokens.space4),
+          children: [
+            _plannerPrimaryCard(context),
           ],
         ),
       );
