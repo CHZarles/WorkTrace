@@ -11,6 +11,7 @@ UpdateManager getUpdateManager() => _IoUpdateManager();
 class _IoUpdateManager implements UpdateManager {
   static const _userAgent = "RecorderPhone";
   static const _defaultAssetSuffix = "-windows-setup.exe";
+  static const _innoAppId = "{D3A8F3B5-3A57-4A17-9A2B-D8C1A8E1D95D}";
 
   @override
   bool get isAvailable => !kIsWeb && Platform.isWindows;
@@ -22,6 +23,14 @@ class _IoUpdateManager implements UpdateManager {
     final sep = Platform.pathSeparator;
     if (a.endsWith(sep)) return "$a$b";
     return "$a$sep$b";
+  }
+
+  String _normalizePath(String raw) {
+    var v = raw.trim();
+    if (v.startsWith('"') && v.endsWith('"') && v.length >= 2) {
+      v = v.substring(1, v.length - 1);
+    }
+    return v.replaceAll("/", Platform.pathSeparator).trim();
   }
 
   Directory? _appDir() {
@@ -46,6 +55,52 @@ class _IoUpdateManager implements UpdateManager {
     final collector = File("$base${sep}windows_collector.exe");
     final info = File("$base${sep}build-info.json");
     return core.existsSync() && collector.existsSync() && info.existsSync();
+  }
+
+  Future<String?> _queryRegistryValue(String key, String valueName) async {
+    try {
+      final res = await Process.run(
+        "reg.exe",
+        ["query", key, "/v", valueName],
+        runInShell: false,
+      );
+      if (res.exitCode != 0) return null;
+      final out = "${res.stdout}\n${res.stderr}";
+      final pattern =
+          RegExp("^\\s*${RegExp.escape(valueName)}\\s+REG_\\w+\\s+(.*)\$");
+      for (final line in out.split(RegExp(r"\r?\n"))) {
+        final m = pattern.firstMatch(line);
+        if (m == null) continue;
+        final v = _normalizePath(m.group(1) ?? "");
+        if (v.isNotEmpty) return v;
+      }
+    } catch (_) {
+      // ignore
+    }
+    return null;
+  }
+
+  Future<String?> _installedInstallDirFromRegistry() async {
+    final key =
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{D3A8F3B5-3A57-4A17-9A2B-D8C1A8E1D95D}_is1";
+
+    final loc = await _queryRegistryValue(key, "InstallLocation");
+    if (loc != null && loc.trim().isNotEmpty) return loc.trim();
+
+    final displayIcon = await _queryRegistryValue(key, "DisplayIcon");
+    final icon = (displayIcon ?? "").trim();
+    if (icon.isEmpty) return null;
+
+    var exe = icon;
+    final comma = exe.indexOf(",");
+    if (comma > 0) exe = exe.substring(0, comma);
+    exe = _normalizePath(exe).trim();
+    if (exe.isEmpty) return null;
+    try {
+      return File(exe).parent.path;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<bool> _canWriteToDir(Directory dir) async {
@@ -325,13 +380,22 @@ class _IoUpdateManager implements UpdateManager {
     return r'''
 param(
   [Parameter(Mandatory=$true)][string]$SetupPath,
-  [Parameter(Mandatory=$true)][string]$InstallDir,
-  [string]$ExeName = "RecorderPhone.exe",
+  [string]$InstallDir = "",
+  [string]$PreferredExeName = "RecorderPhone.exe",
+  [string]$AppId = "",
   [int]$UiPid = 0,
   [string]$StartArgs = ""
 )
 
 $ErrorActionPreference = "Stop"
+$LogPath = Join-Path $env:TEMP "RecorderPhone-updater.log"
+
+function Write-Log {
+  param([Parameter(Mandatory=$true)][string]$Line)
+  try {
+    Add-Content -Path $LogPath -Value ("[{0}] {1}" -f (Get-Date).ToString("s"), $Line)
+  } catch {}
+}
 
 function Stop-ByName {
   param([Parameter(Mandatory=$true)][string[]]$Names)
@@ -353,8 +417,67 @@ function Wait-NotRunning {
   }
 }
 
+function Read-UninstallValue {
+  param([Parameter(Mandatory=$true)][string]$Name)
+  if ([string]::IsNullOrWhiteSpace($AppId)) { return "" }
+  $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$($AppId)_is1"
+  try {
+    $v = (Get-ItemProperty -Path $key -Name $Name -ErrorAction Stop).$Name
+    if ($null -eq $v) { return "" }
+    return "$v".Trim()
+  } catch {
+    return ""
+  }
+}
+
+function Resolve-InstallDir {
+  param([string]$Fallback)
+  $loc = Read-UninstallValue -Name "InstallLocation"
+  if (-not [string]::IsNullOrWhiteSpace($loc)) { return $loc.Trim('"') }
+
+  $icon = Read-UninstallValue -Name "DisplayIcon"
+  if (-not [string]::IsNullOrWhiteSpace($icon)) {
+    $path = $icon.Trim('"')
+    $comma = $path.IndexOf(",")
+    if ($comma -gt 0) { $path = $path.Substring(0, $comma) }
+    try {
+      $dir = Split-Path -Parent $path
+      if (-not [string]::IsNullOrWhiteSpace($dir)) { return $dir }
+    } catch {}
+  }
+  return $Fallback
+}
+
+function Resolve-UiExe {
+  param(
+    [Parameter(Mandatory=$true)][string]$Dir,
+    [string]$Preferred = "RecorderPhone.exe"
+  )
+  $candidates = @()
+  if (-not [string]::IsNullOrWhiteSpace($Preferred)) {
+    $candidates += (Join-Path $Dir $Preferred)
+  }
+  $candidates += (Join-Path $Dir "RecorderPhone.exe")
+
+  foreach ($c in $candidates) {
+    if (Test-Path $c) { return $c }
+  }
+
+  $alts = Get-ChildItem -Path $Dir -Filter "*.exe" -File -ErrorAction SilentlyContinue `
+    | Where-Object { $_.Name -ne "recorder_core.exe" -and $_.Name -ne "windows_collector.exe" } `
+    | Sort-Object `
+        @{ Expression = { if ($_.Name -ieq "RecorderPhone.exe") { 0 } elseif ($_.Name -ieq "recorderphone_ui.exe") { 1 } else { 2 } } }, `
+        @{ Expression = { $_.Name } }
+  if ($alts -and $alts.Count -gt 0) { return $alts[0].FullName }
+  return ""
+}
+
+Write-Log "updater started setup=$SetupPath installDir=$InstallDir appId=$AppId uiPid=$UiPid"
+
 if (!(Test-Path $SetupPath)) { throw "setup_not_found" }
-if ([string]::IsNullOrWhiteSpace($InstallDir)) { throw "install_dir_missing" }
+$targetInstallDir = Resolve-InstallDir -Fallback $InstallDir
+if ([string]::IsNullOrWhiteSpace($targetInstallDir)) { throw "install_dir_missing" }
+Write-Log "resolved install dir: $targetInstallDir"
 
 $names = @("RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector")
 Stop-ByName -Names $names
@@ -367,29 +490,39 @@ $setupArgs = @(
   "/NORESTART",
   "/SP-",
   "/CLOSEAPPLICATIONS",
-  "/FORCECLOSEAPPLICATIONS",
-  "/DIR=""$InstallDir"""
+  "/FORCECLOSEAPPLICATIONS"
 )
+if (-not [string]::IsNullOrWhiteSpace($targetInstallDir)) {
+  $setupArgs += "/DIR=""$targetInstallDir"""
+}
 
+Write-Log "running installer: $SetupPath"
 $setupProc = Start-Process -FilePath $SetupPath -ArgumentList $setupArgs -PassThru -Wait
 if ($null -eq $setupProc) { throw "setup_start_failed" }
 if ($setupProc.ExitCode -ne 0) { throw "setup_failed_exit_$($setupProc.ExitCode)" }
+Write-Log "installer finished exit=$($setupProc.ExitCode)"
 
-$exe = Join-Path $InstallDir $ExeName
-if (!(Test-Path $exe)) {
-  $c = Get-ChildItem -Path $InstallDir -Filter "*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($c) { $exe = $c.FullName } else { throw "installed_exe_not_found" }
+$finalInstallDir = Resolve-InstallDir -Fallback $targetInstallDir
+if ([string]::IsNullOrWhiteSpace($finalInstallDir)) { $finalInstallDir = $targetInstallDir }
+Write-Log "final install dir: $finalInstallDir"
+
+$exe = Resolve-UiExe -Dir $finalInstallDir -Preferred $PreferredExeName
+if ([string]::IsNullOrWhiteSpace($exe) -or !(Test-Path $exe)) {
+  throw "installed_exe_not_found"
 }
+Write-Log "restart exe: $exe"
 
 try {
   if ([string]::IsNullOrWhiteSpace($StartArgs)) {
-    Start-Process -FilePath $exe | Out-Null
+    Start-Process -FilePath $exe -WorkingDirectory $finalInstallDir | Out-Null
   } else {
-    Start-Process -FilePath $exe -ArgumentList $StartArgs | Out-Null
+    Start-Process -FilePath $exe -ArgumentList $StartArgs -WorkingDirectory $finalInstallDir | Out-Null
   }
 } catch {
+  Write-Log "restart failed: $($_.Exception.Message)"
   throw "restart_failed: $($_.Exception.Message)"
 }
+Write-Log "update completed"
 ''';
   }
 
@@ -402,15 +535,23 @@ try {
     if (!isAvailable)
       return const UpdateInstallResult(ok: false, error: "not_supported");
 
-    final dir = _appDir();
-    if (dir == null)
+    final currentDir = _appDir();
+    if (currentDir == null)
       return const UpdateInstallResult(ok: false, error: "no_app_dir");
 
-    if (!_looksLikePackagedInstall(dir)) {
+    final registryInstallDir = await _installedInstallDirFromRegistry();
+    final targetDir =
+        (registryInstallDir != null && registryInstallDir.trim().isNotEmpty)
+            ? Directory(registryInstallDir.trim())
+            : currentDir;
+
+    final currentLooksPackaged = _looksLikePackagedInstall(currentDir);
+    final targetLooksPackaged = _looksLikePackagedInstall(targetDir);
+    if (!currentLooksPackaged && !targetLooksPackaged) {
       return const UpdateInstallResult(ok: false, error: "packaged_only");
     }
 
-    final canWrite = await _canWriteToDir(dir);
+    final canWrite = await _canWriteToDir(targetDir);
     if (!canWrite) {
       return const UpdateInstallResult(
           ok: false, error: "install_dir_not_writable");
@@ -429,12 +570,13 @@ try {
           File(_join(Directory.systemTemp.path, "RecorderPhone-update.ps1"));
       await scriptFile.writeAsString(_updaterScript(), flush: true);
 
-      final exePath = Platform.resolvedExecutable;
-      final exeName = exePath.split(Platform.pathSeparator).last;
+      final preferredExeName = "RecorderPhone.exe";
       final startArgs = startMinimized ? "--minimized" : "";
 
       final args = <String>[
         "-NoProfile",
+        "-WindowStyle",
+        "Hidden",
         "-ExecutionPolicy",
         "Bypass",
         "-File",
@@ -442,9 +584,11 @@ try {
         "-SetupPath",
         setupAsset.path,
         "-InstallDir",
-        dir.path,
-        "-ExeName",
-        exeName,
+        targetDir.path,
+        "-PreferredExeName",
+        preferredExeName,
+        "-AppId",
+        _innoAppId,
         "-UiPid",
         pid.toString(),
         "-StartArgs",
