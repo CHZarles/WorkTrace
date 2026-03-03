@@ -1,4 +1,5 @@
 import "dart:async";
+import "dart:convert";
 
 import "package:flutter/material.dart";
 import "package:flutter_markdown/flutter_markdown.dart";
@@ -479,6 +480,7 @@ class ReportsScreenState extends State<ReportsScreen> {
     final record = await showModalBottomSheet<ReportRecord>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
       builder: (_) => _ReportDetailSheet(
         client: widget.client,
@@ -1202,81 +1204,407 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
     }
   }
 
+  String _periodText(ReportRecord r) {
+    if (r.kind == "daily") return r.periodStart;
+    return "${r.periodStart} ~ ${r.periodEnd}";
+  }
+
+  String _generatedAtLocal(String raw) {
+    final ts = DateTime.tryParse(raw);
+    if (ts == null) return raw;
+    final local = ts.toLocal();
+    String two(int v) => v.toString().padLeft(2, "0");
+    return "${local.year}-${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}";
+  }
+
+  String _providerHost(String? rawUrl) {
+    final s = (rawUrl ?? "").trim();
+    if (s.isEmpty) return "";
+    final uri = Uri.tryParse(s);
+    if (uri == null || uri.host.trim().isEmpty) return s;
+    return uri.host.trim();
+  }
+
+  String _prettyJson(String raw) {
+    if (raw.trim().isEmpty) return raw;
+    try {
+      final decoded = jsonDecode(raw);
+      const encoder = JsonEncoder.withIndent("  ");
+      return encoder.convert(decoded);
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  Widget _metaChip({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: scheme.surfaceContainerHighest,
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.10)),
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: RecorderTokens.space2,
+        vertical: 6,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _textPanel(BuildContext context, String text,
+      {bool monospace = false}) {
+    final style = monospace
+        ? Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(fontFamily: "monospace")
+        : Theme.of(context).textTheme.bodyMedium;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(RecorderTokens.space3),
+      child: SelectableText(text, style: style),
+    );
+  }
+
+  bool _isWideDesktop(BuildContext context) {
+    return MediaQuery.sizeOf(context).width >= 1080;
+  }
+
+  Widget _tabbedContent(
+    BuildContext context,
+    ColorScheme scheme,
+    List<_ReportTabData> tabs,
+  ) {
+    return DefaultTabController(
+      length: tabs.length,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TabBar(
+            isScrollable: true,
+            tabs: [
+              for (final tab in tabs)
+                Tab(
+                  icon: Icon(tab.icon, size: 16),
+                  text: tab.label,
+                ),
+            ],
+          ),
+          const SizedBox(height: RecorderTokens.space2),
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
+                border: Border.all(
+                  color: scheme.outline.withValues(alpha: 0.10),
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: TabBarView(
+                children: [
+                  for (final tab in tabs) tab.child,
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _compactActions(String out) {
+    return Wrap(
+      spacing: RecorderTokens.space2,
+      runSpacing: RecorderTokens.space2,
+      children: [
+        FilledButton.icon(
+          onPressed: _busy || out.isEmpty ? null : () => _copy(out),
+          icon: const Icon(Icons.copy, size: 18),
+          label: const Text("Copy markdown"),
+        ),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _regenerate,
+          icon: const Icon(Icons.refresh, size: 18),
+          label: Text(_busy ? "Working…" : "Regenerate"),
+        ),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _load,
+          icon: const Icon(Icons.refresh_outlined, size: 18),
+          label: const Text("Reload"),
+        ),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _delete,
+          icon: const Icon(Icons.delete_outline, size: 18),
+          label: const Text("Delete"),
+        ),
+      ],
+    );
+  }
+
+  Widget _wideActionPanel(BuildContext context, String out) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.12)),
+      ),
+      padding: const EdgeInsets.all(RecorderTokens.space3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Actions", style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: RecorderTokens.space2),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _busy || out.isEmpty ? null : () => _copy(out),
+              icon: const Icon(Icons.copy, size: 18),
+              label: const Text("Copy markdown"),
+            ),
+          ),
+          const SizedBox(height: RecorderTokens.space2),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : _regenerate,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: Text(_busy ? "Working…" : "Regenerate"),
+            ),
+          ),
+          const SizedBox(height: RecorderTokens.space2),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : _load,
+              icon: const Icon(Icons.refresh_outlined, size: 18),
+              label: const Text("Reload"),
+            ),
+          ),
+          const SizedBox(height: RecorderTokens.space2),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : _delete,
+              icon: const Icon(Icons.delete_outline, size: 18),
+              label: const Text("Delete"),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _wideMetaRow({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: scheme.onSurfaceVariant),
+        const SizedBox(width: RecorderTokens.space2),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 2),
+              Text(value, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _wideMetaPanel({
+    required BuildContext context,
+    required ReportRecord report,
+    required String generatedAt,
+    required String providerHost,
+    required String outputMarkdown,
+    required String errorText,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.12)),
+      ),
+      padding: const EdgeInsets.all(RecorderTokens.space3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Details", style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: RecorderTokens.space2),
+          _wideMetaRow(
+            context: context,
+            icon: report.kind == "daily"
+                ? Icons.today_outlined
+                : Icons.date_range_outlined,
+            label: "Type",
+            value: report.kind == "daily" ? "Daily" : "Weekly",
+          ),
+          const SizedBox(height: RecorderTokens.space2),
+          _wideMetaRow(
+            context: context,
+            icon: Icons.calendar_month_outlined,
+            label: "Period",
+            value: _periodText(report),
+          ),
+          const SizedBox(height: RecorderTokens.space2),
+          _wideMetaRow(
+            context: context,
+            icon: Icons.schedule_outlined,
+            label: "Generated At",
+            value: generatedAt,
+          ),
+          if ((report.model ?? "").trim().isNotEmpty) ...[
+            const SizedBox(height: RecorderTokens.space2),
+            _wideMetaRow(
+              context: context,
+              icon: Icons.memory_outlined,
+              label: "Model",
+              value: report.model!.trim(),
+            ),
+          ],
+          if (providerHost.isNotEmpty) ...[
+            const SizedBox(height: RecorderTokens.space2),
+            _wideMetaRow(
+              context: context,
+              icon: Icons.cloud_outlined,
+              label: "Provider",
+              value: providerHost,
+            ),
+          ],
+          const SizedBox(height: RecorderTokens.space2),
+          _wideMetaRow(
+            context: context,
+            icon: outputMarkdown.isEmpty
+                ? Icons.hourglass_empty_outlined
+                : Icons.check_circle_outline,
+            label: "Output",
+            value: outputMarkdown.isEmpty ? "No output" : "Output ready",
+          ),
+          if (errorText.isNotEmpty) ...[
+            const SizedBox(height: RecorderTokens.space2),
+            _wideMetaRow(
+              context: context,
+              icon: Icons.error_outline,
+              label: "Error",
+              value: "Present",
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
     return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: RecorderTokens.space4,
-          right: RecorderTokens.space4,
-          bottom:
-              RecorderTokens.space4 + MediaQuery.of(context).viewInsets.bottom,
-          top: RecorderTokens.space2,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Report", style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: RecorderTokens.space2),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.all(RecorderTokens.space4),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_error != null)
-              Row(
-                children: [
-                  Icon(Icons.error_outline, size: 18, color: scheme.error),
-                  const SizedBox(width: RecorderTokens.space2),
-                  Expanded(child: Text("Load failed: $_error")),
-                  const SizedBox(width: RecorderTokens.space2),
-                  OutlinedButton.icon(
-                    onPressed: _busy ? null : _load,
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text("Retry"),
-                  ),
-                ],
-              )
-            else ...[
-              Builder(
-                builder: (context) {
-                  final r = _record;
-                  if (r == null) return const SizedBox.shrink();
-                  final out = (r.outputMd ?? "").trim();
-                  final err = (r.error ?? "").trim();
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (err.isNotEmpty) ...[
-                        Row(
-                          children: [
-                            Icon(Icons.warning_amber_rounded,
-                                size: 18, color: scheme.tertiary),
-                            const SizedBox(width: RecorderTokens.space2),
-                            Expanded(
-                                child: Text(err,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis)),
-                          ],
-                        ),
-                        const SizedBox(height: RecorderTokens.space2),
-                      ],
-                      Container(
-                        width: double.infinity,
-                        constraints: const BoxConstraints(maxHeight: 420),
+      child: FractionallySizedBox(
+        heightFactor: 0.92,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: RecorderTokens.space4,
+            right: RecorderTokens.space4,
+            bottom: RecorderTokens.space4 +
+                MediaQuery.of(context).viewInsets.bottom,
+            top: RecorderTokens.space2,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_loading)
+                const Expanded(
+                    child: Center(child: CircularProgressIndicator()))
+              else if (_error != null)
+                Expanded(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 640),
+                      child: Container(
                         decoration: BoxDecoration(
-                          color: scheme.surfaceContainerHighest,
+                          color: scheme.errorContainer.withValues(alpha: 0.35),
                           borderRadius:
                               BorderRadius.circular(RecorderTokens.radiusM),
                           border: Border.all(
-                              color: scheme.outline.withValues(alpha: 0.10)),
+                              color: scheme.error.withValues(alpha: 0.25)),
                         ),
                         padding: const EdgeInsets.all(RecorderTokens.space3),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.error_outline,
+                                size: 18, color: scheme.error),
+                            const SizedBox(width: RecorderTokens.space2),
+                            Expanded(child: Text("Load failed: $_error")),
+                            const SizedBox(width: RecorderTokens.space2),
+                            OutlinedButton.icon(
+                              onPressed: _busy ? null : _load,
+                              icon: const Icon(Icons.refresh, size: 18),
+                              label: const Text("Retry"),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else ...[
+                Builder(
+                  builder: (context) {
+                    final r = _record;
+                    if (r == null) {
+                      return const Expanded(child: SizedBox.shrink());
+                    }
+
+                    final out = (r.outputMd ?? "").trim();
+                    final prompt = (r.prompt ?? "").trim();
+                    final inputJson = (r.inputJson ?? "").trim();
+                    final err = (r.error ?? "").trim();
+                    final generatedAt = _generatedAtLocal(r.generatedAt);
+                    final providerHost = _providerHost(r.providerUrl);
+                    final isWideDesktop = _isWideDesktop(context);
+
+                    final tabs = <_ReportTabData>[
+                      _ReportTabData(
+                        label: "Markdown",
+                        icon: Icons.article_outlined,
                         child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(RecorderTokens.space3),
                           child: MarkdownBody(
                             data: out.isEmpty ? "*(No output)*" : out,
                             selectable: true,
@@ -1292,36 +1620,158 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: RecorderTokens.space3),
-                      Wrap(
-                        spacing: RecorderTokens.space2,
-                        runSpacing: RecorderTokens.space2,
+                    ];
+                    if (prompt.isNotEmpty) {
+                      tabs.add(
+                        _ReportTabData(
+                          label: "Prompt",
+                          icon: Icons.tune_outlined,
+                          child: _textPanel(context, prompt, monospace: true),
+                        ),
+                      );
+                    }
+                    if (inputJson.isNotEmpty) {
+                      tabs.add(
+                        _ReportTabData(
+                          label: "Input",
+                          icon: Icons.data_object_outlined,
+                          child: _textPanel(context, _prettyJson(inputJson),
+                              monospace: true),
+                        ),
+                      );
+                    }
+                    if (err.isNotEmpty) {
+                      tabs.add(
+                        _ReportTabData(
+                          label: "Error",
+                          icon: Icons.warning_amber_rounded,
+                          child: _textPanel(context, err),
+                        ),
+                      );
+                    }
+
+                    return Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          FilledButton.icon(
-                            onPressed: _busy ? null : () => _copy(out),
-                            icon: const Icon(Icons.copy, size: 18),
-                            label: const Text("Copy"),
+                          Text("Report",
+                              style: Theme.of(context).textTheme.titleMedium),
+                          const SizedBox(height: RecorderTokens.space1),
+                          Text(
+                            _periodText(r),
+                            style: Theme.of(context).textTheme.titleSmall,
                           ),
-                          OutlinedButton.icon(
-                            onPressed: _busy ? null : _regenerate,
-                            icon: const Icon(Icons.refresh, size: 18),
-                            label: Text(_busy ? "Working…" : "Regenerate"),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: _busy ? null : _delete,
-                            icon: const Icon(Icons.delete_outline, size: 18),
-                            label: const Text("Delete"),
-                          ),
+                          const SizedBox(height: RecorderTokens.space2),
+                          if (!isWideDesktop) ...[
+                            Wrap(
+                              spacing: RecorderTokens.space2,
+                              runSpacing: RecorderTokens.space2,
+                              children: [
+                                _metaChip(
+                                  context: context,
+                                  icon: r.kind == "daily"
+                                      ? Icons.today_outlined
+                                      : Icons.date_range_outlined,
+                                  label: r.kind == "daily" ? "Daily" : "Weekly",
+                                ),
+                                _metaChip(
+                                  context: context,
+                                  icon: Icons.schedule_outlined,
+                                  label: "Generated $generatedAt",
+                                ),
+                                if ((r.model ?? "").trim().isNotEmpty)
+                                  _metaChip(
+                                    context: context,
+                                    icon: Icons.memory_outlined,
+                                    label: r.model!.trim(),
+                                  ),
+                                if (providerHost.isNotEmpty)
+                                  _metaChip(
+                                    context: context,
+                                    icon: Icons.cloud_outlined,
+                                    label: providerHost,
+                                  ),
+                                _metaChip(
+                                  context: context,
+                                  icon: out.isEmpty
+                                      ? Icons.hourglass_empty_outlined
+                                      : Icons.check_circle_outline,
+                                  label: out.isEmpty
+                                      ? "No output"
+                                      : "Output ready",
+                                ),
+                                if (err.isNotEmpty)
+                                  _metaChip(
+                                    context: context,
+                                    icon: Icons.error_outline,
+                                    label: "Has error",
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: RecorderTokens.space2),
+                            _compactActions(out),
+                            const SizedBox(height: RecorderTokens.space2),
+                            Expanded(
+                              child: _tabbedContent(context, scheme, tabs),
+                            ),
+                          ] else ...[
+                            Expanded(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child:
+                                        _tabbedContent(context, scheme, tabs),
+                                  ),
+                                  const SizedBox(width: RecorderTokens.space3),
+                                  SizedBox(
+                                    width: 320,
+                                    child: SingleChildScrollView(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          _wideMetaPanel(
+                                            context: context,
+                                            report: r,
+                                            generatedAt: generatedAt,
+                                            providerHost: providerHost,
+                                            outputMarkdown: out,
+                                            errorText: err,
+                                          ),
+                                          const SizedBox(
+                                              height: RecorderTokens.space2),
+                                          _wideActionPanel(context, out),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
-                    ],
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
   }
+}
+
+class _ReportTabData {
+  const _ReportTabData({
+    required this.label,
+    required this.icon,
+    required this.child,
+  });
+
+  final String label;
+  final IconData icon;
+  final Widget child;
 }
