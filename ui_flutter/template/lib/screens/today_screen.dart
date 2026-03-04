@@ -3083,10 +3083,10 @@ class TodayScreenState extends State<TodayScreen> {
               padding: const EdgeInsets.all(RecorderTokens.space4),
               itemCount: 1 +
                   1 +
-                  1 +
-                  1 +
                   (due != null ? 1 : 0) +
                   1 +
+                  1 +
+                  (!showEmpty ? 1 : 0) +
                   (showEmpty ? 1 : 0),
               separatorBuilder: (_, __) =>
                   const SizedBox(height: RecorderTokens.space3),
@@ -3094,20 +3094,22 @@ class TodayScreenState extends State<TodayScreen> {
                 var idx = 0;
                 if (i == idx) return _overviewCard(context, topAgg);
                 idx += 1;
-                if (i == idx) return _todayTopCard(context, topAgg);
-                idx += 1;
-                if (i == idx) return _flowCard(context);
-                idx += 1;
-                if (i == idx) return _timelineCard(context);
+                if (i == idx)
+                  return viewingToday
+                      ? _nowCard(context)
+                      : _nowUnavailableCard(context);
                 idx += 1;
                 if (due != null) {
                   if (i == idx) return _reviewDueCard(context, due);
                   idx += 1;
                 }
-                if (i == idx)
-                  return viewingToday
-                      ? _nowCard(context)
-                      : _nowUnavailableCard(context);
+                if (i == idx) return _todayTopCard(context, topAgg);
+                idx += 1;
+                if (!showEmpty) {
+                  if (i == idx) return _flowCard(context);
+                  idx += 1;
+                }
+                if (i == idx) return _timelineCard(context);
                 idx += 1;
                 return _EmptyState(
                   dayLabel: _dateLocal(_day),

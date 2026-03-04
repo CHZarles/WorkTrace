@@ -31,6 +31,8 @@ enum _ReportSettingsSection {
   prompts
 }
 
+enum _ReportSettingsLayer { basic, automation, prompts }
+
 class _ScheduledTodoLayout {
   const _ScheduledTodoLayout({
     required this.todo,
@@ -99,6 +101,7 @@ class ReportsScreenState extends State<ReportsScreen> {
   _WeekCalendarScale _weekCalendarScale = _WeekCalendarScale.fullDay;
   _ReportSettingsSection _reportSettingsSection =
       _ReportSettingsSection.connection;
+  _ReportSettingsLayer _reportSettingsLayer = _ReportSettingsLayer.basic;
   DateTime _todoAnchorDay = DateTime.now();
   bool _plannerShowInsights = false;
 
@@ -577,12 +580,43 @@ class ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  String _todoSummaryText() {
+  Widget _plannerCompactStats(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final open = _todos.where((t) => !t.done).length;
-    final done = _todos.where((t) => t.done).length;
+    final today = _todos.where((t) => !t.done && _todoIsToday(t)).length;
+    final scheduled =
+        _todos.where((t) => !t.done && _todoHasSchedule(t)).length;
     final overdue = _todos.where(_todoIsOverdue).length;
-    if (_todos.isEmpty) return "No TODO yet";
-    return "$open open · $done done · $overdue overdue";
+
+    Widget stat(String label, String value, {Color? tint}) {
+      final color = tint ?? scheme.onSurfaceVariant;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
+        ),
+        child: Text(
+          "$label $value",
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        stat("Open", "$open"),
+        stat("Today", "$today", tint: scheme.primary),
+        stat("Scheduled", "$scheduled"),
+        stat("Overdue", "$overdue", tint: overdue > 0 ? scheme.error : null),
+      ],
+    );
   }
 
   bool _todoHasReminder(ReportTodo todo) {
@@ -726,7 +760,7 @@ class ReportsScreenState extends State<ReportsScreen> {
   String _weekCalendarScaleLabel(_WeekCalendarScale scale) {
     switch (scale) {
       case _WeekCalendarScale.fullDay:
-        return "24h";
+        return "24h fit";
       case _WeekCalendarScale.standard:
         return "Standard";
       case _WeekCalendarScale.detail:
@@ -737,11 +771,11 @@ class ReportsScreenState extends State<ReportsScreen> {
   double _weekCalendarHourHeight() {
     switch (_weekCalendarScale) {
       case _WeekCalendarScale.fullDay:
-        return 30.0;
+        return 24.0;
       case _WeekCalendarScale.standard:
-        return 44.0;
+        return 36.0;
       case _WeekCalendarScale.detail:
-        return 58.0;
+        return 52.0;
     }
   }
 
@@ -757,6 +791,54 @@ class ReportsScreenState extends State<ReportsScreen> {
         return "Storage";
       case _ReportSettingsSection.prompts:
         return "Prompts";
+    }
+  }
+
+  String _reportSettingsLayerLabel(_ReportSettingsLayer layer) {
+    switch (layer) {
+      case _ReportSettingsLayer.basic:
+        return "Basic";
+      case _ReportSettingsLayer.automation:
+        return "Automation";
+      case _ReportSettingsLayer.prompts:
+        return "Prompts";
+    }
+  }
+
+  IconData _reportSettingsLayerIcon(_ReportSettingsLayer layer) {
+    switch (layer) {
+      case _ReportSettingsLayer.basic:
+        return Icons.tune_outlined;
+      case _ReportSettingsLayer.automation:
+        return Icons.schedule_outlined;
+      case _ReportSettingsLayer.prompts:
+        return Icons.psychology_outlined;
+    }
+  }
+
+  List<_ReportSettingsSection> _sectionsForLayer(_ReportSettingsLayer layer) {
+    switch (layer) {
+      case _ReportSettingsLayer.basic:
+        return const [
+          _ReportSettingsSection.connection,
+          _ReportSettingsSection.planner,
+          _ReportSettingsSection.storage,
+        ];
+      case _ReportSettingsLayer.automation:
+        return const [_ReportSettingsSection.automation];
+      case _ReportSettingsLayer.prompts:
+        return const [_ReportSettingsSection.prompts];
+    }
+  }
+
+  String _reportSettingsLayerHint(_ReportSettingsLayer layer) {
+    switch (layer) {
+      case _ReportSettingsLayer.basic:
+        return "Provider, planner behavior and file output.";
+      case _ReportSettingsLayer.automation:
+        return "Daily/weekly schedule and generation timing.";
+      case _ReportSettingsLayer.prompts:
+        return "Advanced prompt tuning for report writing style.";
     }
   }
 
@@ -2231,100 +2313,6 @@ class ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Widget _plannerStatCard(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required int value,
-    Color? tint,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = tint ?? scheme.primary;
-    return Container(
-      constraints: const BoxConstraints(minWidth: 140),
-      padding: const EdgeInsets.symmetric(
-        horizontal: RecorderTokens.space3,
-        vertical: RecorderTokens.space2,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.22)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: Theme.of(context).textTheme.labelSmall),
-              Text(
-                "$value",
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: color,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _plannerOverviewRow(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final openCount = _todos.where((t) => !t.done).length;
-    final todayCount = _todos.where((t) => !t.done && _todoIsToday(t)).length;
-    final scheduledCount =
-        _todos.where((t) => !t.done && _todoHasSchedule(t)).length;
-    final reminderCount =
-        _todos.where((t) => !t.done && _todoHasReminder(t)).length;
-    final overdueCount = _todos.where(_todoIsOverdue).length;
-    return Wrap(
-      spacing: RecorderTokens.space2,
-      runSpacing: RecorderTokens.space2,
-      children: [
-        _plannerStatCard(
-          context,
-          icon: Icons.assignment_turned_in_outlined,
-          label: "Open",
-          value: openCount,
-        ),
-        _plannerStatCard(
-          context,
-          icon: Icons.today_outlined,
-          label: "Today",
-          value: todayCount,
-          tint: scheme.tertiary,
-        ),
-        _plannerStatCard(
-          context,
-          icon: Icons.schedule_outlined,
-          label: "Scheduled",
-          value: scheduledCount,
-          tint: scheme.secondary,
-        ),
-        _plannerStatCard(
-          context,
-          icon: Icons.alarm_outlined,
-          label: "Reminder",
-          value: reminderCount,
-          tint: scheme.primary,
-        ),
-        _plannerStatCard(
-          context,
-          icon: Icons.warning_amber_rounded,
-          label: "Overdue",
-          value: overdueCount,
-          tint: scheme.error,
-        ),
-      ],
-    );
-  }
-
   Widget _plannerInsightsPanel(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final now = DateTime.now();
@@ -2422,24 +2410,6 @@ class ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  String _plannerCoachNote() {
-    final open = _todos.where((t) => !t.done).length;
-    final overdue = _todos.where(_todoIsOverdue).length;
-    final today = _todos.where((t) => !t.done && _todoIsToday(t)).length;
-    final noSchedule = _todos.where((t) => !t.done && !_todoHasSchedule(t));
-    if (open == 0) return "Backlog is clear. Add the next key TODO.";
-    if (overdue > 0) {
-      return "Resolve overdue first to recover plan reliability.";
-    }
-    if (today >= 6) {
-      return "Today's load is heavy. Move low-value items to later slots.";
-    }
-    if (noSchedule.length >= 4) {
-      return "Many TODOs have no time block. Add schedule for execution quality.";
-    }
-    return "Plan health is stable. Keep calendar blocks focused on deep work.";
-  }
-
   Widget _todoSectionCard(
     BuildContext context, {
     required IconData icon,
@@ -2509,37 +2479,6 @@ class ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Widget _calendarLegendItem(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    Color? tint,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 13, color: tint ?? scheme.onSurfaceVariant),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: Theme.of(context)
-                .textTheme
-                .labelSmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _todoListDimension(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final sorted = _todosForListPanel();
@@ -2562,32 +2501,6 @@ class ReportsScreenState extends State<ReportsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(RecorderTokens.space2),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.tips_and_updates_outlined,
-                  size: 16, color: scheme.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _plannerCoachNote(),
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelMedium
-                      ?.copyWith(color: scheme.onSurfaceVariant),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: RecorderTokens.space2),
         Wrap(
           spacing: RecorderTokens.space2,
           runSpacing: RecorderTokens.space2,
@@ -2833,46 +2746,24 @@ class ReportsScreenState extends State<ReportsScreen> {
             ],
           ),
           const SizedBox(height: 6),
-          Align(
-            alignment: Alignment.centerLeft,
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: RecorderTokens.space2,
+              vertical: RecorderTokens.space1,
+            ),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
+            ),
             child: Text(
-              "Tip: select 24h to view full-day grid; click empty grid to create TODO; drag block to reschedule (15m snap).",
+              "24h fit: full day in one screen · tap empty grid to create · drag block to reschedule (15m snap)",
               style: Theme.of(context)
                   .textTheme
                   .labelSmall
                   ?.copyWith(color: scheme.onSurfaceVariant),
             ),
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _calendarLegendItem(
-                context,
-                icon: Icons.calendar_view_week_outlined,
-                label: "Scheduled block",
-                tint: scheme.primary,
-              ),
-              _calendarLegendItem(
-                context,
-                icon: Icons.check_circle_outline,
-                label: "Done",
-                tint: scheme.onSurfaceVariant,
-              ),
-              _calendarLegendItem(
-                context,
-                icon: Icons.alarm_outlined,
-                label: "Reminder",
-                tint: scheme.secondary,
-              ),
-              _calendarLegendItem(
-                context,
-                icon: Icons.open_with,
-                label: "Drag to reschedule",
-                tint: scheme.tertiary,
-              ),
-            ],
           ),
         ],
         const SizedBox(height: RecorderTokens.space2),
@@ -2946,6 +2837,14 @@ class ReportsScreenState extends State<ReportsScreen> {
                 children: [
                   Text("Planner",
                       style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 4),
+                  Text(
+                    "Manage TODO and calendar in one place.",
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelMedium
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
                   const SizedBox(height: RecorderTokens.space2),
                   Wrap(
                     spacing: RecorderTokens.space2,
@@ -2974,8 +2873,21 @@ class ReportsScreenState extends State<ReportsScreen> {
             return Row(
               children: [
                 Expanded(
-                  child: Text("Planner",
-                      style: Theme.of(context).textTheme.titleLarge),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Planner",
+                          style: Theme.of(context).textTheme.titleLarge),
+                      const SizedBox(height: 2),
+                      Text(
+                        "Manage TODO and calendar in one place.",
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelMedium
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
                 ),
                 OutlinedButton.icon(
                   onPressed: () => setState(
@@ -2996,28 +2908,8 @@ class ReportsScreenState extends State<ReportsScreen> {
             );
           },
         ),
-        const SizedBox(height: 6),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(
-            horizontal: RecorderTokens.space2,
-            vertical: RecorderTokens.space1,
-          ),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
-          ),
-          child: Text(
-            _todoSummaryText(),
-            style: Theme.of(context)
-                .textTheme
-                .labelLarge
-                ?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-        ),
         const SizedBox(height: RecorderTokens.space2),
-        _plannerOverviewRow(context),
+        _plannerCompactStats(context),
         const SizedBox(height: RecorderTokens.space2),
         SegmentedButton<_PlannerDimension>(
           segments: const [
@@ -3123,6 +3015,7 @@ class ReportsScreenState extends State<ReportsScreen> {
     final outputDirLine = (_effectiveOutputDir ?? "").trim().isEmpty
         ? null
         : "Output: ${_effectiveOutputDir!.trim()}";
+    final visibleSections = _sectionsForLayer(_reportSettingsLayer);
 
     return Card(
       child: Padding(
@@ -3242,8 +3135,29 @@ class ReportsScreenState extends State<ReportsScreen> {
               ),
               children: [
                 const SizedBox(height: RecorderTokens.space2),
+                SegmentedButton<_ReportSettingsLayer>(
+                  segments: [
+                    for (final layer in _ReportSettingsLayer.values)
+                      ButtonSegment<_ReportSettingsLayer>(
+                        value: layer,
+                        icon: Icon(_reportSettingsLayerIcon(layer)),
+                        label: Text(_reportSettingsLayerLabel(layer)),
+                      ),
+                  ],
+                  selected: {_reportSettingsLayer},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (s) {
+                    final layer = s.first;
+                    final sections = _sectionsForLayer(layer);
+                    setState(() {
+                      _reportSettingsLayer = layer;
+                      _reportSettingsSection = sections.first;
+                    });
+                  },
+                ),
+                const SizedBox(height: RecorderTokens.space2),
                 Text(
-                  "Layered setup: choose one section to reduce visual noise.",
+                  _reportSettingsLayerHint(_reportSettingsLayer),
                   style: Theme.of(context)
                       .textTheme
                       .labelMedium
@@ -3254,7 +3168,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                   spacing: RecorderTokens.space2,
                   runSpacing: RecorderTokens.space1,
                   children: [
-                    for (final section in _ReportSettingsSection.values)
+                    for (final section in visibleSections)
                       ChoiceChip(
                         avatar: Icon(
                           _reportSettingsSectionIcon(section),

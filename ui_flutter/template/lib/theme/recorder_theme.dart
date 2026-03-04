@@ -43,10 +43,57 @@ class RecorderTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: RecorderLightColors.surface1,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
           borderSide: BorderSide(color: RecorderLightColors.border0),
         ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
+          ),
+          side: BorderSide(color: RecorderLightColors.border0),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
+        ),
+        side: BorderSide(color: RecorderLightColors.border0),
+        backgroundColor: RecorderLightColors.surface0,
+        selectedColor: RecorderLightColors.accentContainer,
+        labelStyle: TextStyle(color: RecorderLightColors.text1),
+        secondaryLabelStyle: TextStyle(color: RecorderLightColors.text0),
+      ),
+      listTileTheme: const ListTileThemeData(
+        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        minVerticalPadding: 8,
+      ),
+      dividerTheme: DividerThemeData(
+        color: RecorderLightColors.border0,
+        thickness: 1,
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        indicatorColor: RecorderLightColors.accentContainer,
+        labelTextStyle: WidgetStateProperty.all(
+          const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ),
+      navigationRailTheme: NavigationRailThemeData(
+        indicatorColor: RecorderLightColors.accentContainer,
+        selectedIconTheme: IconThemeData(color: RecorderLightColors.accent1),
       ),
       tooltipTheme: TooltipThemeData(
         excludeFromSemantics: defaultTargetPlatform == TargetPlatform.windows,
@@ -93,10 +140,57 @@ class RecorderTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: RecorderDarkColors.surface1,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
           borderSide: BorderSide(color: RecorderDarkColors.border0),
         ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
+          ),
+          side: BorderSide(color: RecorderDarkColors.border0),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
+        ),
+        side: BorderSide(color: RecorderDarkColors.border0),
+        backgroundColor: RecorderDarkColors.surface0,
+        selectedColor: RecorderDarkColors.accentContainer,
+        labelStyle: TextStyle(color: RecorderDarkColors.text1),
+        secondaryLabelStyle: TextStyle(color: RecorderDarkColors.text0),
+      ),
+      listTileTheme: const ListTileThemeData(
+        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        minVerticalPadding: 8,
+      ),
+      dividerTheme: DividerThemeData(
+        color: RecorderDarkColors.border0,
+        thickness: 1,
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        indicatorColor: RecorderDarkColors.accentContainer,
+        labelTextStyle: WidgetStateProperty.all(
+          const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ),
+      navigationRailTheme: NavigationRailThemeData(
+        indicatorColor: RecorderDarkColors.accentContainer,
+        selectedIconTheme: IconThemeData(color: RecorderDarkColors.accent0),
       ),
       tooltipTheme: TooltipThemeData(
         excludeFromSemantics: defaultTargetPlatform == TargetPlatform.windows,

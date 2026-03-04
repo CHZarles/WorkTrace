@@ -788,6 +788,15 @@ class SearchScreenState extends State<SearchScreen> {
         ? Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text("Quick Review",
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: RecorderTokens.space1),
+              Text(
+                "Filter pending blocks, then review or batch tag/skip.",
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: RecorderTokens.space3),
               Row(
                 children: [
                   Expanded(child: field),
@@ -812,6 +821,15 @@ class SearchScreenState extends State<SearchScreen> {
         : Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text("Quick Review",
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: RecorderTokens.space1),
+              Text(
+                "Filter pending blocks, then review or batch tag/skip.",
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: RecorderTokens.space3),
               field,
               const SizedBox(height: RecorderTokens.space2),
               Row(
@@ -830,7 +848,15 @@ class SearchScreenState extends State<SearchScreen> {
             ],
           );
 
-    return Container(key: widget.tutorialHeaderKey, child: content);
+    return Container(
+      key: widget.tutorialHeaderKey,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(RecorderTokens.space3),
+          child: content,
+        ),
+      ),
+    );
   }
 
   @override

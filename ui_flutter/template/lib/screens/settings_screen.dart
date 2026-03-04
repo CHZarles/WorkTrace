@@ -16,6 +16,8 @@ enum _PrivacyLevel { l1, l2, l3 }
 
 enum _RuleFilter { all, domains, apps }
 
+enum _SettingsPanel { overview, diagnostics, trackingPrivacy, data }
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     super.key,
@@ -51,6 +53,7 @@ class SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _ruleQuery;
   late final TextEditingController _updateRepo;
   _RuleFilter _ruleFilter = _RuleFilter.all;
+  _SettingsPanel _settingsPanel = _SettingsPanel.overview;
   final ScrollController _scrollV = ScrollController();
 
   bool _healthLoading = false;
@@ -1255,6 +1258,32 @@ class SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  String _settingsPanelLabel(_SettingsPanel panel) {
+    switch (panel) {
+      case _SettingsPanel.overview:
+        return "Overview";
+      case _SettingsPanel.diagnostics:
+        return "Diagnostics";
+      case _SettingsPanel.trackingPrivacy:
+        return "Tracking & Privacy";
+      case _SettingsPanel.data:
+        return "Data";
+    }
+  }
+
+  IconData _settingsPanelIcon(_SettingsPanel panel) {
+    switch (panel) {
+      case _SettingsPanel.overview:
+        return Icons.dashboard_outlined;
+      case _SettingsPanel.diagnostics:
+        return Icons.health_and_safety_outlined;
+      case _SettingsPanel.trackingPrivacy:
+        return Icons.shield_outlined;
+      case _SettingsPanel.data:
+        return Icons.folder_open_outlined;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final healthText = _healthLoading
@@ -1290,243 +1319,275 @@ class SettingsScreenState extends State<SettingsScreen> {
             onTap: widget.onOpenTutorial,
           ),
         ),
-        const SizedBox(height: RecorderTokens.space6),
-        Text("Server", style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: RecorderTokens.space3),
         Card(
           child: Padding(
-            padding: const EdgeInsets.all(RecorderTokens.space2),
-            child: Column(
+            padding: const EdgeInsets.all(RecorderTokens.space3),
+            child: Wrap(
+              spacing: RecorderTokens.space2,
+              runSpacing: RecorderTokens.space1,
               children: [
-                ListTile(
-                  title: const Text("Server URL"),
-                  subtitle: Text(widget.serverUrl),
-                  trailing: IconButton(
-                    onPressed: _editServerUrl,
-                    tooltip: "Edit",
-                    icon: const Icon(Icons.edit),
+                for (final panel in _SettingsPanel.values)
+                  ChoiceChip(
+                    avatar: Icon(_settingsPanelIcon(panel), size: 16),
+                    label: Text(_settingsPanelLabel(panel)),
+                    selected: _settingsPanel == panel,
+                    onSelected: (_) => setState(() => _settingsPanel = panel),
                   ),
-                ),
-                const Divider(height: 1),
-                Padding(
-                  padding: const EdgeInsets.all(RecorderTokens.space2),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          healthMeta.isEmpty
-                              ? "Health: $healthText"
-                              : "Health: $healthText · $healthMeta",
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(color: healthColor),
-                        ),
-                      ),
-                      if (_healthError != null)
-                        IconButton(
-                          onPressed: () => showDialog<void>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text("Health error"),
-                              content: Text(_healthError!),
-                              actions: [
-                                FilledButton(
-                                    onPressed: () => Navigator.pop(ctx),
-                                    child: const Text("Close")),
-                              ],
-                            ),
-                          ),
-                          tooltip: "Details",
-                          icon: const Icon(Icons.info_outline),
-                        ),
-                      FilledButton.icon(
-                        onPressed: _healthLoading ? null : _checkHealth,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text("Test /health"),
-                      ),
-                    ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: RecorderTokens.space6),
+        if (_settingsPanel == _SettingsPanel.overview)
+          Text("Server", style: Theme.of(context).textTheme.titleMedium),
+        if (_settingsPanel == _SettingsPanel.overview)
+          const SizedBox(height: RecorderTokens.space3),
+        if (_settingsPanel == _SettingsPanel.overview)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(RecorderTokens.space2),
+              child: Column(
+                children: [
+                  ListTile(
+                    title: const Text("Server URL"),
+                    subtitle: Text(widget.serverUrl),
+                    trailing: IconButton(
+                      onPressed: _editServerUrl,
+                      tooltip: "Edit",
+                      icon: const Icon(Icons.edit),
+                    ),
                   ),
-                ),
-                if (DesktopAgent.instance.isAvailable) ...[
                   const Divider(height: 1),
                   Padding(
                     padding: const EdgeInsets.all(RecorderTokens.space2),
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          Icons.memory,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: RecorderTokens.space2),
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Desktop agent (Windows)",
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                _agentRepoRoot == null
-                                    ? "Repo root not detected. This is OK in packaged mode.\nIf you're running from source, run UI from the repo or set env RECORDERPHONE_REPO_ROOT."
-                                    : "Repo: $_agentRepoRoot",
-                                style: Theme.of(context).textTheme.labelMedium,
-                              ),
-                              const SizedBox(height: RecorderTokens.space2),
-                              Wrap(
-                                spacing: RecorderTokens.space2,
-                                runSpacing: RecorderTokens.space2,
-                                children: [
-                                  Builder(
-                                    builder: (context) {
-                                      final service = _healthInfo?.service;
-                                      final coreLooksHealthy =
-                                          _healthOk == true &&
-                                              service == "recorder_core";
-                                      final alreadyRunning =
-                                          _isLocalServerUrl() &&
-                                              coreLooksHealthy;
-                                      final startEnabled = !_agentBusy &&
-                                          _isLocalServerUrl() &&
-                                          !alreadyRunning;
-                                      return FilledButton.icon(
-                                        onPressed: startEnabled
-                                            ? () => _startAgent(restart: false)
-                                            : null,
-                                        icon: Icon(alreadyRunning
-                                            ? Icons.check_circle_outline
-                                            : Icons.play_arrow),
-                                        label: Text(
-                                          _agentBusy
-                                              ? "Starting…"
-                                              : alreadyRunning
-                                                  ? "Running"
-                                                  : "Start",
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  OutlinedButton.icon(
-                                    onPressed: _agentBusy
-                                        ? null
-                                        : () => _startAgent(restart: true),
-                                    icon: const Icon(Icons.restart_alt),
-                                    label: const Text("Restart"),
-                                  ),
-                                  OutlinedButton.icon(
-                                    onPressed: _agentBusy ? null : _stopAgent,
-                                    icon: const Icon(Icons.stop),
-                                    label: const Text("Stop"),
-                                  ),
+                          child: Text(
+                            healthMeta.isEmpty
+                                ? "Health: $healthText"
+                                : "Health: $healthText · $healthMeta",
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(color: healthColor),
+                          ),
+                        ),
+                        if (_healthError != null)
+                          IconButton(
+                            onPressed: () => showDialog<void>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text("Health error"),
+                                content: Text(_healthError!),
+                                actions: [
+                                  FilledButton(
+                                      onPressed: () => Navigator.pop(ctx),
+                                      child: const Text("Close")),
                                 ],
                               ),
-                              const SizedBox(height: RecorderTokens.space2),
-                              Text(
-                                _isLocalServerUrl()
-                                    ? "Starts local Core + windows_collector so you don't need to run WSL Core."
-                                    : "Set Server URL to http://127.0.0.1:17600 to use the local agent.",
-                                style: Theme.of(context).textTheme.labelMedium,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                "Tip: enable Privacy L2 (Store titles) to see YouTube video titles / VS Code workspace names.",
-                                style: Theme.of(context).textTheme.labelMedium,
-                              ),
-                              const SizedBox(height: RecorderTokens.space2),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Icon(
-                                    Icons.folder_open_outlined,
-                                    size: 16,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
+                            ),
+                            tooltip: "Details",
+                            icon: const Icon(Icons.info_outline),
+                          ),
+                        FilledButton.icon(
+                          onPressed: _healthLoading ? null : _checkHealth,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text("Test /health"),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (DesktopAgent.instance.isAvailable) ...[
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.all(RecorderTokens.space2),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.memory,
+                            size: 18,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: RecorderTokens.space2),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Desktop agent (Windows)",
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _agentRepoRoot == null
+                                      ? "Repo root not detected. This is OK in packaged mode.\nIf you're running from source, run UI from the repo or set env RECORDERPHONE_REPO_ROOT."
+                                      : "Repo: $_agentRepoRoot",
+                                  style:
+                                      Theme.of(context).textTheme.labelMedium,
+                                ),
+                                const SizedBox(height: RecorderTokens.space2),
+                                Wrap(
+                                  spacing: RecorderTokens.space2,
+                                  runSpacing: RecorderTokens.space2,
+                                  children: [
+                                    Builder(
+                                      builder: (context) {
+                                        final service = _healthInfo?.service;
+                                        final coreLooksHealthy =
+                                            _healthOk == true &&
+                                                service == "recorder_core";
+                                        final alreadyRunning =
+                                            _isLocalServerUrl() &&
+                                                coreLooksHealthy;
+                                        final startEnabled = !_agentBusy &&
+                                            _isLocalServerUrl() &&
+                                            !alreadyRunning;
+                                        return FilledButton.icon(
+                                          onPressed: startEnabled
+                                              ? () =>
+                                                  _startAgent(restart: false)
+                                              : null,
+                                          icon: Icon(alreadyRunning
+                                              ? Icons.check_circle_outline
+                                              : Icons.play_arrow),
+                                          label: Text(
+                                            _agentBusy
+                                                ? "Starting…"
+                                                : alreadyRunning
+                                                    ? "Running"
+                                                    : "Start",
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    OutlinedButton.icon(
+                                      onPressed: _agentBusy
+                                          ? null
+                                          : () => _startAgent(restart: true),
+                                      icon: const Icon(Icons.restart_alt),
+                                      label: const Text("Restart"),
+                                    ),
+                                    OutlinedButton.icon(
+                                      onPressed: _agentBusy ? null : _stopAgent,
+                                      icon: const Icon(Icons.stop),
+                                      label: const Text("Stop"),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: RecorderTokens.space2),
+                                Text(
+                                  _isLocalServerUrl()
+                                      ? "Starts local Core + windows_collector so you don't need to run WSL Core."
+                                      : "Set Server URL to http://127.0.0.1:17600 to use the local agent.",
+                                  style:
+                                      Theme.of(context).textTheme.labelMedium,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  "Tip: enable Privacy L2 (Store titles) to see YouTube video titles / VS Code workspace names.",
+                                  style:
+                                      Theme.of(context).textTheme.labelMedium,
+                                ),
+                                const SizedBox(height: RecorderTokens.space2),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      Icons.folder_open_outlined,
+                                      size: 16,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
+                                    const SizedBox(
+                                        width: RecorderTokens.space1),
+                                    Expanded(
+                                      child: Text(
+                                        "Installer path: %LOCALAPPDATA%\\Programs\\RecorderPhone\nDatabase: %LOCALAPPDATA%\\RecorderPhone\\recorder-core.db",
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelMedium,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (StartupController.instance.isAvailable) ...[
+                                  const SizedBox(height: RecorderTokens.space2),
+                                  const Divider(height: 16),
+                                  ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: Icon(
+                                      Icons.power_settings_new,
+                                      size: 18,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
+                                    title: const Text("Start with Windows"),
+                                    subtitle: Text(
+                                      _startupError != null
+                                          ? "Error: $_startupError"
+                                          : _startupEnabled == null
+                                              ? "Checking…"
+                                              : "Launches RecorderPhone on login (minimized to tray).",
+                                    ),
+                                    trailing: _startupBusy
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2),
+                                          )
+                                        : Switch(
+                                            value: _startupEnabled == true,
+                                            onChanged: _startupEnabled == null
+                                                ? null
+                                                : (v) {
+                                                    _setStartupEnabled(v)
+                                                        .catchError((e) {
+                                                      final msg = e.toString();
+                                                      ScaffoldMessenger.of(
+                                                              context)
+                                                          .showSnackBar(
+                                                        SnackBar(
+                                                            content: Text(
+                                                                "Startup update failed: $msg")),
+                                                      );
+                                                    });
+                                                  },
+                                          ),
                                   ),
-                                  const SizedBox(width: RecorderTokens.space1),
-                                  Expanded(
+                                  Padding(
+                                    padding:
+                                        const EdgeInsets.only(left: 2, top: 2),
                                     child: Text(
-                                      "Installer path: %LOCALAPPDATA%\\Programs\\RecorderPhone\nDatabase: %LOCALAPPDATA%\\RecorderPhone\\recorder-core.db",
+                                      "Close window → keeps running in tray. Use tray menu → Exit to quit.",
                                       style: Theme.of(context)
                                           .textTheme
                                           .labelMedium,
                                     ),
                                   ),
                                 ],
-                              ),
-                              if (StartupController.instance.isAvailable) ...[
-                                const SizedBox(height: RecorderTokens.space2),
-                                const Divider(height: 16),
-                                ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  leading: Icon(
-                                    Icons.power_settings_new,
-                                    size: 18,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                                  title: const Text("Start with Windows"),
-                                  subtitle: Text(
-                                    _startupError != null
-                                        ? "Error: $_startupError"
-                                        : _startupEnabled == null
-                                            ? "Checking…"
-                                            : "Launches RecorderPhone on login (minimized to tray).",
-                                  ),
-                                  trailing: _startupBusy
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                              strokeWidth: 2),
-                                        )
-                                      : Switch(
-                                          value: _startupEnabled == true,
-                                          onChanged: _startupEnabled == null
-                                              ? null
-                                              : (v) {
-                                                  _setStartupEnabled(v)
-                                                      .catchError((e) {
-                                                    final msg = e.toString();
-                                                    ScaffoldMessenger.of(
-                                                            context)
-                                                        .showSnackBar(
-                                                      SnackBar(
-                                                          content: Text(
-                                                              "Startup update failed: $msg")),
-                                                    );
-                                                  });
-                                                },
-                                        ),
-                                ),
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.only(left: 2, top: 2),
-                                  child: Text(
-                                    "Close window → keeps running in tray. Use tray menu → Exit to quit.",
-                                    style:
-                                        Theme.of(context).textTheme.labelMedium,
-                                  ),
-                                ),
                               ],
-                            ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: RecorderTokens.space6),
-        if (UpdateManager.instance.isAvailable) ...[
+        if (_settingsPanel == _SettingsPanel.overview) ...[
+          const SizedBox(height: RecorderTokens.space6),
+        ],
+        if (_settingsPanel == _SettingsPanel.overview &&
+            UpdateManager.instance.isAvailable) ...[
           Text("Updates", style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: RecorderTokens.space3),
           Card(
@@ -1662,680 +1723,498 @@ class SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: RecorderTokens.space6),
         ],
-        Row(
-          children: [
-            Expanded(
-                child: Text("Diagnostics",
-                    style: Theme.of(context).textTheme.titleMedium)),
-            OutlinedButton.icon(
-              onPressed: _refreshAll,
-              icon: const Icon(Icons.refresh),
-              label: const Text("Refresh"),
-            ),
-          ],
-        ),
-        const SizedBox(height: RecorderTokens.space3),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(RecorderTokens.space2),
-            child: Builder(
-              builder: (context) {
-                if (_nowLoading && _now == null) {
-                  return const Padding(
-                    padding: EdgeInsets.all(RecorderTokens.space4),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-
-                final snap = _now;
-                final usingFallbackEvents = snap == null;
-
-                EventRecord? lastTabFocus;
-                EventRecord? lastTabAudio;
-                EventRecord? lastTabAudioStop;
-                EventRecord? lastApp;
-                EventRecord? lastAppAudio;
-                EventRecord? lastAppAudioStop;
-                EventRecord? lastAny;
-
-                if (snap != null) {
-                  lastTabFocus = snap.tabFocus;
-                  lastTabAudio = snap.tabAudio;
-                  lastTabAudioStop = snap.tabAudioStop;
-                  lastApp = snap.appActive;
-                  lastAppAudio = snap.appAudio;
-                  lastAppAudioStop = snap.appAudioStop;
-                  lastAny = snap.latestEvent;
-                } else {
-                  if (_eventsLoading && _events.isEmpty) {
+        if (_settingsPanel == _SettingsPanel.diagnostics)
+          Row(
+            children: [
+              Expanded(
+                  child: Text("Diagnostics",
+                      style: Theme.of(context).textTheme.titleMedium)),
+              OutlinedButton.icon(
+                onPressed: _refreshAll,
+                icon: const Icon(Icons.refresh),
+                label: const Text("Refresh"),
+              ),
+            ],
+          ),
+        if (_settingsPanel == _SettingsPanel.diagnostics)
+          const SizedBox(height: RecorderTokens.space3),
+        if (_settingsPanel == _SettingsPanel.diagnostics)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(RecorderTokens.space2),
+              child: Builder(
+                builder: (context) {
+                  if (_nowLoading && _now == null) {
                     return const Padding(
                       padding: EdgeInsets.all(RecorderTokens.space4),
                       child: Center(child: CircularProgressIndicator()),
                     );
                   }
 
-                  for (final e in _events) {
-                    if (e.source == "browser_extension" &&
-                        e.event == "tab_active" &&
-                        e.activity != "audio") {
-                      lastTabFocus = e;
-                      break;
-                    }
-                  }
-                  lastTabAudio = _latestEvent(
-                      event: "tab_active",
-                      source: "browser_extension",
-                      activity: "audio");
-                  lastTabAudioStop = _latestEvent(
-                      event: "tab_audio_stop", source: "browser_extension");
-                  lastApp = _latestEvent(
-                      event: "app_active", source: "windows_collector");
-                  lastAppAudio = _latestEvent(
-                      event: "app_audio", source: "windows_collector");
-                  lastAppAudioStop = _latestEvent(
-                      event: "app_audio_stop", source: "windows_collector");
-                  lastAny = _events.isEmpty ? null : _events.first;
-                }
+                  final snap = _now;
+                  final usingFallbackEvents = snap == null;
 
-                bool isBrowserLabel(String label) {
-                  final v = label.trim().toLowerCase();
-                  return v == "chrome" ||
-                      v == "msedge" ||
-                      v == "edge" ||
-                      v == "brave" ||
-                      v == "vivaldi" ||
-                      v == "opera" ||
-                      v == "firefox";
-                }
+                  EventRecord? lastTabFocus;
+                  EventRecord? lastTabAudio;
+                  EventRecord? lastTabAudioStop;
+                  EventRecord? lastApp;
+                  EventRecord? lastAppAudio;
+                  EventRecord? lastAppAudioStop;
+                  EventRecord? lastAny;
 
-                final focusTtlSeconds = snap?.focusTtlSeconds ?? (3 * 60);
-                final focusTtl =
-                    Duration(seconds: focusTtlSeconds.clamp(30, 3600));
-                final focusFreshMinutes =
-                    (focusTtl.inSeconds / 60).ceil().clamp(1, 120);
-
-                final lastAppTs =
-                    lastApp == null ? null : _parseLocalTs(lastApp.ts);
-                final lastAppAge = lastAppTs == null
-                    ? null
-                    : DateTime.now().difference(lastAppTs);
-                final lastAppLabel = displayEntity(lastApp?.entity);
-                final appLooksLikeBrowser =
-                    lastApp != null && isBrowserLabel(lastAppLabel);
-                final appIsFresh = lastAppAge != null && lastAppAge <= focusTtl;
-                final browserLooksActive = appLooksLikeBrowser && appIsFresh;
-
-                final lastTabTs = lastTabFocus == null
-                    ? null
-                    : _parseLocalTs(lastTabFocus.ts);
-                final lastTabAge = lastTabTs == null
-                    ? null
-                    : DateTime.now().difference(lastTabTs);
-                final tabLooksStale = lastTabAge == null ||
-                    lastTabAge > (focusTtl + const Duration(seconds: 60));
-
-                bool hasAnyTabEvent =
-                    lastTabFocus != null || lastTabAudio != null;
-                String anyTabTitle() {
-                  final t1 = (lastTabFocus?.title ?? "").trim();
-                  if (t1.isNotEmpty) return t1;
-                  final t2 = (lastTabAudio?.title ?? "").trim();
-                  if (t2.isNotEmpty) return t2;
-                  return "";
-                }
-
-                final tabHasTitle = anyTabTitle().isNotEmpty;
-                final appHasTitle = ((lastApp?.title ?? "").trim()).isNotEmpty;
-                final appTitleUseful = lastApp != null &&
-                    !appLooksLikeBrowser; // browser window titles are noisy
-
-                Widget titleGuide() {
-                  final scheme = Theme.of(context).colorScheme;
-
-                  String title;
-                  String subtitle;
-                  IconData icon;
-                  List<Widget> actions = [];
-
-                  if (!_storeTitles) {
-                    title = "Titles: OFF (L1)";
-                    subtitle =
-                        "To split sites like YouTube by video title and to show VS Code workspace/window titles, enable L2.\nOld data won't be backfilled.";
-                    icon = Icons.lock_outline;
-                    actions = [
-                      FilledButton(
-                        onPressed: _coreSettingsSaving
-                            ? null
-                            : () async {
-                                setState(() {
-                                  _storeTitles = true;
-                                  _storeExePath = false;
-                                });
-                                await _savePrivacySettings();
-                              },
-                        child: const Text("Enable L2"),
-                      ),
-                    ];
+                  if (snap != null) {
+                    lastTabFocus = snap.tabFocus;
+                    lastTabAudio = snap.tabAudio;
+                    lastTabAudioStop = snap.tabAudioStop;
+                    lastApp = snap.appActive;
+                    lastAppAudio = snap.appAudio;
+                    lastAppAudioStop = snap.appAudioStop;
+                    lastAny = snap.latestEvent;
                   } else {
-                    title = "Titles: ON (L2)";
-                    icon = Icons.check_circle_outline;
-
-                    final tips = <String>[];
-                    if (hasAnyTabEvent && !tabHasTitle) {
-                      tips.add(
-                          "Browser: enable “Send tab title” in the extension popup, then click “Force send”.");
-                    }
-                    if (!hasAnyTabEvent) {
-                      tips.add(
-                          "Browser: no tab events yet. Switch a tab or click “Force send” in the extension popup.");
-                    }
-                    if (appTitleUseful && !appHasTitle) {
-                      tips.add(
-                          "Windows: start windows_collector with --send-title to capture window titles/workspaces.");
+                    if (_eventsLoading && _events.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.all(RecorderTokens.space4),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
                     }
 
-                    subtitle = tips.isEmpty
-                        ? "Looks good. You should see per-tab titles (when available) and better app context (e.g. VS Code workspace)."
-                        : tips.join("\n");
-
-                    actions = [
-                      OutlinedButton.icon(
-                        onPressed: _deleteDayLoading
-                            ? null
-                            : () async {
-                                setState(() {
-                                  _dateLocal.text = _todayLocal();
-                                });
-                                await _deleteDayData();
-                              },
-                        icon: const Icon(Icons.delete_outline),
-                        label: const Text("Reset today"),
-                      ),
-                    ];
+                    for (final e in _events) {
+                      if (e.source == "browser_extension" &&
+                          e.event == "tab_active" &&
+                          e.activity != "audio") {
+                        lastTabFocus = e;
+                        break;
+                      }
+                    }
+                    lastTabAudio = _latestEvent(
+                        event: "tab_active",
+                        source: "browser_extension",
+                        activity: "audio");
+                    lastTabAudioStop = _latestEvent(
+                        event: "tab_audio_stop", source: "browser_extension");
+                    lastApp = _latestEvent(
+                        event: "app_active", source: "windows_collector");
+                    lastAppAudio = _latestEvent(
+                        event: "app_audio", source: "windows_collector");
+                    lastAppAudioStop = _latestEvent(
+                        event: "app_audio_stop", source: "windows_collector");
+                    lastAny = _events.isEmpty ? null : _events.first;
                   }
 
-                  return Padding(
-                    padding: const EdgeInsets.all(RecorderTokens.space2),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest,
-                        borderRadius:
-                            BorderRadius.circular(RecorderTokens.radiusM),
-                        border: Border.all(
-                            color: scheme.outline.withValues(alpha: 0.10)),
-                      ),
-                      padding: const EdgeInsets.all(RecorderTokens.space3),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(icon, size: 18, color: scheme.onSurfaceVariant),
-                          const SizedBox(width: RecorderTokens.space2),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(title,
-                                    style:
-                                        Theme.of(context).textTheme.labelLarge),
-                                const SizedBox(height: 4),
-                                Text(subtitle,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelMedium),
-                              ],
-                            ),
-                          ),
-                          if (actions.isNotEmpty) ...[
-                            const SizedBox(width: RecorderTokens.space2),
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: actions,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  );
-                }
+                  bool isBrowserLabel(String label) {
+                    final v = label.trim().toLowerCase();
+                    return v == "chrome" ||
+                        v == "msedge" ||
+                        v == "edge" ||
+                        v == "brave" ||
+                        v == "vivaldi" ||
+                        v == "opera" ||
+                        v == "firefox";
+                  }
 
-                Widget tile({
-                  required String title,
-                  required EventRecord? e,
-                  required String emptyHint,
-                  String? staleHint,
-                  String? missingTitleHint,
-                  int freshnessMinutes = 3,
-                }) {
-                  if (e == null) {
-                    return ListTile(
-                      minVerticalPadding: RecorderTokens.space2,
-                      leading: const Icon(Icons.help_outline),
-                      title: Text(title),
-                      subtitle: Text(emptyHint),
+                  final focusTtlSeconds = snap?.focusTtlSeconds ?? (3 * 60);
+                  final focusTtl =
+                      Duration(seconds: focusTtlSeconds.clamp(30, 3600));
+                  final focusFreshMinutes =
+                      (focusTtl.inSeconds / 60).ceil().clamp(1, 120);
+
+                  final lastAppTs =
+                      lastApp == null ? null : _parseLocalTs(lastApp.ts);
+                  final lastAppAge = lastAppTs == null
+                      ? null
+                      : DateTime.now().difference(lastAppTs);
+                  final lastAppLabel = displayEntity(lastApp?.entity);
+                  final appLooksLikeBrowser =
+                      lastApp != null && isBrowserLabel(lastAppLabel);
+                  final appIsFresh =
+                      lastAppAge != null && lastAppAge <= focusTtl;
+                  final browserLooksActive = appLooksLikeBrowser && appIsFresh;
+
+                  final lastTabTs = lastTabFocus == null
+                      ? null
+                      : _parseLocalTs(lastTabFocus.ts);
+                  final lastTabAge = lastTabTs == null
+                      ? null
+                      : DateTime.now().difference(lastTabTs);
+                  final tabLooksStale = lastTabAge == null ||
+                      lastTabAge > (focusTtl + const Duration(seconds: 60));
+
+                  bool hasAnyTabEvent =
+                      lastTabFocus != null || lastTabAudio != null;
+                  String anyTabTitle() {
+                    final t1 = (lastTabFocus?.title ?? "").trim();
+                    if (t1.isNotEmpty) return t1;
+                    final t2 = (lastTabAudio?.title ?? "").trim();
+                    if (t2.isNotEmpty) return t2;
+                    return "";
+                  }
+
+                  final tabHasTitle = anyTabTitle().isNotEmpty;
+                  final appHasTitle =
+                      ((lastApp?.title ?? "").trim()).isNotEmpty;
+                  final appTitleUseful = lastApp != null &&
+                      !appLooksLikeBrowser; // browser window titles are noisy
+
+                  Widget titleGuide() {
+                    final scheme = Theme.of(context).colorScheme;
+
+                    String title;
+                    String subtitle;
+                    IconData icon;
+                    List<Widget> actions = [];
+
+                    if (!_storeTitles) {
+                      title = "Titles: OFF (L1)";
+                      subtitle =
+                          "To split sites like YouTube by video title and to show VS Code workspace/window titles, enable L2.\nOld data won't be backfilled.";
+                      icon = Icons.lock_outline;
+                      actions = [
+                        FilledButton(
+                          onPressed: _coreSettingsSaving
+                              ? null
+                              : () async {
+                                  setState(() {
+                                    _storeTitles = true;
+                                    _storeExePath = false;
+                                  });
+                                  await _savePrivacySettings();
+                                },
+                          child: const Text("Enable L2"),
+                        ),
+                      ];
+                    } else {
+                      title = "Titles: ON (L2)";
+                      icon = Icons.check_circle_outline;
+
+                      final tips = <String>[];
+                      if (hasAnyTabEvent && !tabHasTitle) {
+                        tips.add(
+                            "Browser: enable “Send tab title” in the extension popup, then click “Force send”.");
+                      }
+                      if (!hasAnyTabEvent) {
+                        tips.add(
+                            "Browser: no tab events yet. Switch a tab or click “Force send” in the extension popup.");
+                      }
+                      if (appTitleUseful && !appHasTitle) {
+                        tips.add(
+                            "Windows: start windows_collector with --send-title to capture window titles/workspaces.");
+                      }
+
+                      subtitle = tips.isEmpty
+                          ? "Looks good. You should see per-tab titles (when available) and better app context (e.g. VS Code workspace)."
+                          : tips.join("\n");
+
+                      actions = [
+                        OutlinedButton.icon(
+                          onPressed: _deleteDayLoading
+                              ? null
+                              : () async {
+                                  setState(() {
+                                    _dateLocal.text = _todayLocal();
+                                  });
+                                  await _deleteDayData();
+                                },
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text("Reset today"),
+                        ),
+                      ];
+                    }
+
+                    return Padding(
+                      padding: const EdgeInsets.all(RecorderTokens.space2),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHighest,
+                          borderRadius:
+                              BorderRadius.circular(RecorderTokens.radiusM),
+                          border: Border.all(
+                              color: scheme.outline.withValues(alpha: 0.10)),
+                        ),
+                        padding: const EdgeInsets.all(RecorderTokens.space3),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(icon,
+                                size: 18, color: scheme.onSurfaceVariant),
+                            const SizedBox(width: RecorderTokens.space2),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(title,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge),
+                                  const SizedBox(height: 4),
+                                  Text(subtitle,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelMedium),
+                                ],
+                              ),
+                            ),
+                            if (actions.isNotEmpty) ...[
+                              const SizedBox(width: RecorderTokens.space2),
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: actions,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                     );
                   }
 
-                  final ts = _parseLocalTs(e.ts);
-                  final age = ts == null ? null : DateTime.now().difference(ts);
-                  final entity = (e.entity ?? "").trim().isEmpty
-                      ? "(no entity)"
-                      : e.entity!.trim();
-                  final fresh = age != null && age.inMinutes < freshnessMinutes;
+                  Widget tile({
+                    required String title,
+                    required EventRecord? e,
+                    required String emptyHint,
+                    String? staleHint,
+                    String? missingTitleHint,
+                    int freshnessMinutes = 3,
+                  }) {
+                    if (e == null) {
+                      return ListTile(
+                        minVerticalPadding: RecorderTokens.space2,
+                        leading: const Icon(Icons.help_outline),
+                        title: Text(title),
+                        subtitle: Text(emptyHint),
+                      );
+                    }
 
-                  final act = (e.activity ?? "").trim();
-                  final tag = act.isEmpty ? e.event : "${e.event}/$act";
-                  final baseSubtitle = ts == null
-                      ? "${e.source} · $tag"
-                      : "${_ageText(ts)} · ${_hhmm(e.ts)} · $tag · $entity";
-                  final titleText = (e.title ?? "").trim();
-                  final secondLine = titleText.isNotEmpty
-                      ? titleText
-                      : (missingTitleHint != null &&
-                              missingTitleHint.trim().isNotEmpty)
-                          ? missingTitleHint
-                          : (!fresh && staleHint != null ? staleHint : null);
-                  final subtitle = secondLine == null
-                      ? baseSubtitle
-                      : "$baseSubtitle\n$secondLine";
-                  final scheme = Theme.of(context).colorScheme;
+                    final ts = _parseLocalTs(e.ts);
+                    final age =
+                        ts == null ? null : DateTime.now().difference(ts);
+                    final entity = (e.entity ?? "").trim().isEmpty
+                        ? "(no entity)"
+                        : e.entity!.trim();
+                    final fresh =
+                        age != null && age.inMinutes < freshnessMinutes;
 
-                  return ListTile(
-                    minVerticalPadding: RecorderTokens.space2,
-                    leading: Icon(
-                      fresh ? Icons.check_circle_outline : Icons.info_outline,
-                      color: fresh ? scheme.primary : scheme.onSurfaceVariant,
-                    ),
-                    title: Text(title),
-                    subtitle: Text(subtitle,
-                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                    final act = (e.activity ?? "").trim();
+                    final tag = act.isEmpty ? e.event : "${e.event}/$act";
+                    final baseSubtitle = ts == null
+                        ? "${e.source} · $tag"
+                        : "${_ageText(ts)} · ${_hhmm(e.ts)} · $tag · $entity";
+                    final titleText = (e.title ?? "").trim();
+                    final secondLine = titleText.isNotEmpty
+                        ? titleText
+                        : (missingTitleHint != null &&
+                                missingTitleHint.trim().isNotEmpty)
+                            ? missingTitleHint
+                            : (!fresh && staleHint != null ? staleHint : null);
+                    final subtitle = secondLine == null
+                        ? baseSubtitle
+                        : "$baseSubtitle\n$secondLine";
+                    final scheme = Theme.of(context).colorScheme;
+
+                    return ListTile(
+                      minVerticalPadding: RecorderTokens.space2,
+                      leading: Icon(
+                        fresh ? Icons.check_circle_outline : Icons.info_outline,
+                        color: fresh ? scheme.primary : scheme.onSurfaceVariant,
+                      ),
+                      title: Text(title),
+                      subtitle: Text(subtitle,
+                          maxLines: 2, overflow: TextOverflow.ellipsis),
+                    );
+                  }
+
+                  return Column(
+                    children: [
+                      titleGuide(),
+                      if (snap != null && snap.latestEventAgeSeconds != null)
+                        Padding(
+                          padding: const EdgeInsets.all(RecorderTokens.space2),
+                          child: Row(
+                            children: [
+                              Icon(Icons.schedule,
+                                  size: 16,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant),
+                              const SizedBox(width: RecorderTokens.space1),
+                              Expanded(
+                                child: Text(
+                                  "Latest event: ${snap.latestEventAgeSeconds}s ago · focus TTL ${focusTtl.inMinutes}m · audio TTL ${snap.audioTtlSeconds}s",
+                                  style:
+                                      Theme.of(context).textTheme.labelMedium,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (_nowError != null && snap == null)
+                        Padding(
+                          padding: const EdgeInsets.all(RecorderTokens.space2),
+                          child: Row(
+                            children: [
+                              Icon(Icons.info_outline,
+                                  size: 16,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant),
+                              const SizedBox(width: RecorderTokens.space1),
+                              Expanded(
+                                child: Text(
+                                  (_nowError ?? "").contains("http_404")
+                                      ? "Tip: this Core does not implement /now. Restart recorder_core and refresh."
+                                      : "Now endpoint error: $_nowError${usingFallbackEvents ? ' (fallback to /events)' : ''}",
+                                  style:
+                                      Theme.of(context).textTheme.labelMedium,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (browserLooksActive &&
+                          (lastTabFocus == null || tabLooksStale))
+                        Padding(
+                          padding: const EdgeInsets.all(RecorderTokens.space2),
+                          child: Row(
+                            children: [
+                              Icon(Icons.warning_amber_rounded,
+                                  size: 16,
+                                  color:
+                                      Theme.of(context).colorScheme.tertiary),
+                              const SizedBox(width: RecorderTokens.space1),
+                              const Expanded(
+                                child: Text(
+                                  "Browser looks active, but tab tracking is stale.\nOpen the extension popup → check Enable tracking + Server URL, then click “Force send”. If it keeps happening, enable “Keep alive (stability)” and click “Repair”.",
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      tile(
+                        title: "Browser tab (focus)",
+                        e: lastTabFocus,
+                        emptyHint:
+                            "No tab_active yet. Open the extension popup and ensure Enable tracking is ON.",
+                        missingTitleHint: _storeTitles
+                            ? "No title field. Enable “Send tab title” in the extension, then click “Force send”."
+                            : "Titles are OFF (L1). Turn on “Store window/tab titles (L2)” below to see tab titles.",
+                        staleHint: browserLooksActive
+                            ? "If you’re using the browser right now, this should be fresh. Open the extension popup → Force send."
+                            : "This can be normal if you're not using the browser. Switch a tab to trigger a fresh event.",
+                        freshnessMinutes: focusFreshMinutes,
+                      ),
+                      const Divider(height: 1),
+                      tile(
+                        title: "Browser tab (background audio)",
+                        e: lastTabAudio ?? lastTabAudioStop,
+                        emptyHint:
+                            "No background-audio tab yet. Enable “Track background audio” in the extension, then play audio with the browser in background.",
+                        missingTitleHint: _storeTitles
+                            ? "No title field. Enable “Send tab title” in the extension, then click “Force send”."
+                            : "Titles are OFF (L1). Turn on “Store window/tab titles (L2)” below to see tab titles.",
+                        staleHint:
+                            "This only reports when the browser is not focused but an audible tab is playing.",
+                        freshnessMinutes: 2,
+                      ),
+                      const Divider(height: 1),
+                      tile(
+                        title: "Windows app events",
+                        e: lastApp,
+                        emptyHint:
+                            "No app_active yet. Start windows_collector.exe and switch apps a few times.",
+                        missingTitleHint: _storeTitles
+                            ? "No title field. Start windows_collector with --send-title."
+                            : "Titles are OFF (L1). Turn on “Store window/tab titles (L2)” below to see window titles/workspaces.",
+                        staleHint:
+                            "If windows_collector isn't running, this will go stale. Restart it to resume events.",
+                        freshnessMinutes: focusFreshMinutes,
+                      ),
+                      const Divider(height: 1),
+                      tile(
+                        title: "Windows background audio (app)",
+                        e: lastAppAudio ?? lastAppAudioStop,
+                        emptyHint:
+                            "No app_audio yet. Start windows_collector.exe (default track-audio ON) and play music in a desktop app (e.g. QQ Music).",
+                        staleHint:
+                            "This only reports when a non-browser app is producing audio. If you're only using browser audio, check the extension's background-audio tile instead.",
+                        freshnessMinutes: 2,
+                      ),
+                      const Divider(height: 1),
+                      tile(
+                        title: "Latest event (any)",
+                        e: lastAny,
+                        emptyHint:
+                            "No events yet. Install the extension / run collectors, then switch apps or tabs.",
+                      ),
+                    ],
                   );
-                }
-
-                return Column(
-                  children: [
-                    titleGuide(),
-                    if (snap != null && snap.latestEventAgeSeconds != null)
-                      Padding(
-                        padding: const EdgeInsets.all(RecorderTokens.space2),
-                        child: Row(
-                          children: [
-                            Icon(Icons.schedule,
-                                size: 16,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant),
-                            const SizedBox(width: RecorderTokens.space1),
-                            Expanded(
-                              child: Text(
-                                "Latest event: ${snap.latestEventAgeSeconds}s ago · focus TTL ${focusTtl.inMinutes}m · audio TTL ${snap.audioTtlSeconds}s",
-                                style: Theme.of(context).textTheme.labelMedium,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (_nowError != null && snap == null)
-                      Padding(
-                        padding: const EdgeInsets.all(RecorderTokens.space2),
-                        child: Row(
-                          children: [
-                            Icon(Icons.info_outline,
-                                size: 16,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant),
-                            const SizedBox(width: RecorderTokens.space1),
-                            Expanded(
-                              child: Text(
-                                (_nowError ?? "").contains("http_404")
-                                    ? "Tip: this Core does not implement /now. Restart recorder_core and refresh."
-                                    : "Now endpoint error: $_nowError${usingFallbackEvents ? ' (fallback to /events)' : ''}",
-                                style: Theme.of(context).textTheme.labelMedium,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (browserLooksActive &&
-                        (lastTabFocus == null || tabLooksStale))
-                      Padding(
-                        padding: const EdgeInsets.all(RecorderTokens.space2),
-                        child: Row(
-                          children: [
-                            Icon(Icons.warning_amber_rounded,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.tertiary),
-                            const SizedBox(width: RecorderTokens.space1),
-                            const Expanded(
-                              child: Text(
-                                "Browser looks active, but tab tracking is stale.\nOpen the extension popup → check Enable tracking + Server URL, then click “Force send”. If it keeps happening, enable “Keep alive (stability)” and click “Repair”.",
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    tile(
-                      title: "Browser tab (focus)",
-                      e: lastTabFocus,
-                      emptyHint:
-                          "No tab_active yet. Open the extension popup and ensure Enable tracking is ON.",
-                      missingTitleHint: _storeTitles
-                          ? "No title field. Enable “Send tab title” in the extension, then click “Force send”."
-                          : "Titles are OFF (L1). Turn on “Store window/tab titles (L2)” below to see tab titles.",
-                      staleHint: browserLooksActive
-                          ? "If you’re using the browser right now, this should be fresh. Open the extension popup → Force send."
-                          : "This can be normal if you're not using the browser. Switch a tab to trigger a fresh event.",
-                      freshnessMinutes: focusFreshMinutes,
-                    ),
-                    const Divider(height: 1),
-                    tile(
-                      title: "Browser tab (background audio)",
-                      e: lastTabAudio ?? lastTabAudioStop,
-                      emptyHint:
-                          "No background-audio tab yet. Enable “Track background audio” in the extension, then play audio with the browser in background.",
-                      missingTitleHint: _storeTitles
-                          ? "No title field. Enable “Send tab title” in the extension, then click “Force send”."
-                          : "Titles are OFF (L1). Turn on “Store window/tab titles (L2)” below to see tab titles.",
-                      staleHint:
-                          "This only reports when the browser is not focused but an audible tab is playing.",
-                      freshnessMinutes: 2,
-                    ),
-                    const Divider(height: 1),
-                    tile(
-                      title: "Windows app events",
-                      e: lastApp,
-                      emptyHint:
-                          "No app_active yet. Start windows_collector.exe and switch apps a few times.",
-                      missingTitleHint: _storeTitles
-                          ? "No title field. Start windows_collector with --send-title."
-                          : "Titles are OFF (L1). Turn on “Store window/tab titles (L2)” below to see window titles/workspaces.",
-                      staleHint:
-                          "If windows_collector isn't running, this will go stale. Restart it to resume events.",
-                      freshnessMinutes: focusFreshMinutes,
-                    ),
-                    const Divider(height: 1),
-                    tile(
-                      title: "Windows background audio (app)",
-                      e: lastAppAudio ?? lastAppAudioStop,
-                      emptyHint:
-                          "No app_audio yet. Start windows_collector.exe (default track-audio ON) and play music in a desktop app (e.g. QQ Music).",
-                      staleHint:
-                          "This only reports when a non-browser app is producing audio. If you're only using browser audio, check the extension's background-audio tile instead.",
-                      freshnessMinutes: 2,
-                    ),
-                    const Divider(height: 1),
-                    tile(
-                      title: "Latest event (any)",
-                      e: lastAny,
-                      emptyHint:
-                          "No events yet. Install the extension / run collectors, then switch apps or tabs.",
-                    ),
-                  ],
-                );
-              },
+                },
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: RecorderTokens.space6),
-        Text("Core settings", style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: RecorderTokens.space3),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(RecorderTokens.space4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_coreSettingsLoading && _coreSettings == null)
-                  const Center(child: CircularProgressIndicator())
-                else ...[
-                  TextField(
-                    controller: _blockMinutes,
-                    decoration: const InputDecoration(
-                      labelText: "Block length (minutes)",
-                      helperText:
-                          "Controls block segmentation and review cadence (including history).",
-                    ),
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  ),
-                  const SizedBox(height: RecorderTokens.space3),
-                  TextField(
-                    controller: _idleCutoffMinutes,
-                    decoration: const InputDecoration(
-                      labelText: "Idle cutoff (minutes)",
-                      helperText: "Long gaps beyond this end a block early.",
-                    ),
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  ),
-                  Builder(
-                    builder: (context) {
-                      final dirty = _blockIdleDirty();
-                      if (!dirty && !_coreNumbersSaving)
-                        return const SizedBox.shrink();
-                      return Padding(
-                        padding:
-                            const EdgeInsets.only(top: RecorderTokens.space3),
-                        child: FilledButton.icon(
-                          onPressed: (_coreNumbersSaving || !dirty)
-                              ? null
-                              : _saveCoreSettings,
-                          icon: const Icon(Icons.save_outlined),
-                          label: _coreNumbersSaving
-                              ? const Text("Saving…")
-                              : const Text("Save block/idle"),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: RecorderTokens.space3),
-                  const Divider(),
-                  const SizedBox(height: RecorderTokens.space2),
-                  Text("Review reminders",
-                      style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: RecorderTokens.space2),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.info_outline,
-                          size: 16,
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant),
-                      const SizedBox(width: RecorderTokens.space1),
-                      Expanded(
-                        child: Text(
-                          "“Time to review” triggers when Core finds the most recent due block: long enough (min duration), not reviewed/skipped, and either you already moved on to a new block or the current block reached Block length. To reduce prompts: increase Block length / min duration / repeat.",
-                          style: Theme.of(context).textTheme.labelMedium,
-                        ),
+        if (_settingsPanel == _SettingsPanel.trackingPrivacy)
+          const SizedBox(height: RecorderTokens.space6),
+        if (_settingsPanel == _SettingsPanel.trackingPrivacy)
+          Text("Core settings", style: Theme.of(context).textTheme.titleMedium),
+        if (_settingsPanel == _SettingsPanel.trackingPrivacy)
+          const SizedBox(height: RecorderTokens.space3),
+        if (_settingsPanel == _SettingsPanel.trackingPrivacy)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(RecorderTokens.space4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_coreSettingsLoading && _coreSettings == null)
+                    const Center(child: CircularProgressIndicator())
+                  else ...[
+                    TextField(
+                      controller: _blockMinutes,
+                      decoration: const InputDecoration(
+                        labelText: "Block length (minutes)",
+                        helperText:
+                            "Controls block segmentation and review cadence (including history).",
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: RecorderTokens.space2),
-                  TextField(
-                    controller: _reviewMinMinutes,
-                    enabled: !_coreSettingsSaving,
-                    decoration: const InputDecoration(
-                      labelText:
-                          "Min block duration to require review (minutes)",
-                      helperText:
-                          "Only blocks longer than this can become due (default 5m).",
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     ),
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    onChanged: (_) => _scheduleReviewSave(),
-                  ),
-                  const SizedBox(height: RecorderTokens.space3),
-                  TextField(
-                    controller: _reviewToastRepeatMinutes,
-                    enabled: !_coreSettingsSaving,
-                    decoration: const InputDecoration(
-                      labelText: "Repeat interval (minutes)",
-                      helperText:
-                          "Minimum minutes between reminders for the same due block (toast + in-app prompt). Default 10m.",
-                    ),
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    onChanged: (_) => _scheduleReviewSave(),
-                  ),
-                  const SizedBox(height: RecorderTokens.space2),
-                  SwitchListTile.adaptive(
-                    value: _reviewNotifyWhenPaused,
-                    onChanged: _coreSettingsSaving
-                        ? null
-                        : (v) {
-                            setState(() => _reviewNotifyWhenPaused = v);
-                            _scheduleReviewSave(
-                                delay: const Duration(milliseconds: 200));
-                          },
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text("Notify even when tracking is paused"),
-                    subtitle:
-                        const Text("Applies to Windows toast + in-app prompt."),
-                  ),
-                  SwitchListTile.adaptive(
-                    value: _reviewNotifyWhenIdle,
-                    onChanged: _coreSettingsSaving
-                        ? null
-                        : (v) {
-                            setState(() => _reviewNotifyWhenIdle = v);
-                            _scheduleReviewSave(
-                                delay: const Duration(milliseconds: 200));
-                          },
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text("Notify even when PC is idle"),
-                    subtitle:
-                        const Text("Applies to Windows toast (collector)."),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: RecorderTokens.space1),
-                    child: Text(
-                      _reviewSaving
-                          ? "Saving review reminders…"
-                          : "Review reminder changes are saved automatically.",
-                      style: Theme.of(context).textTheme.labelMedium,
-                    ),
-                  ),
-                  const SizedBox(height: RecorderTokens.space1),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.info_outline,
-                          size: 16,
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant),
-                      const SizedBox(width: RecorderTokens.space1),
-                      Expanded(
-                        child: Text(
-                          "Windows toast settings take effect after restarting the desktop agent / collector.",
-                          style: Theme.of(context).textTheme.labelMedium,
-                        ),
+                    const SizedBox(height: RecorderTokens.space3),
+                    TextField(
+                      controller: _idleCutoffMinutes,
+                      decoration: const InputDecoration(
+                        labelText: "Idle cutoff (minutes)",
+                        helperText: "Long gaps beyond this end a block early.",
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: RecorderTokens.space3),
-                  const Divider(),
-                  const SizedBox(height: RecorderTokens.space2),
-                  Text("Privacy (Core)",
-                      style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: RecorderTokens.space2),
-                  Container(
-                    key: widget.tutorialPrivacyKey,
-                    child: SegmentedButton<_PrivacyLevel>(
-                      segments: const [
-                        ButtonSegment(
-                            value: _PrivacyLevel.l1, label: Text("L1")),
-                        ButtonSegment(
-                            value: _PrivacyLevel.l2, label: Text("L2")),
-                        ButtonSegment(
-                            value: _PrivacyLevel.l3, label: Text("L3")),
-                      ],
-                      selected: {_privacyLevel()},
-                      onSelectionChanged: _coreSettingsSaving
-                          ? null
-                          : (v) {
-                              final next =
-                                  v.isEmpty ? _privacyLevel() : v.first;
-                              _choosePrivacyLevel(next);
-                            },
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     ),
-                  ),
-                  const SizedBox(height: RecorderTokens.space2),
-                  Text(
-                    _privacyLevelExplain(_privacyLevel()),
-                    style: Theme.of(context).textTheme.labelMedium,
-                  ),
-                  const SizedBox(height: RecorderTokens.space2),
-                  SwitchListTile.adaptive(
-                    value: _storeTitles,
-                    onChanged: _coreSettingsSaving
-                        ? null
-                        : (v) {
-                            setState(() {
-                              _storeTitles = v;
-                              if (!v) _storeExePath = false;
-                            });
-                            unawaited(_savePrivacySettings());
-                          },
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text("Store window/tab titles (L2)"),
-                    subtitle: const Text(
-                      "If off, Core drops any title fields even if collectors/extensions send them.",
+                    Builder(
+                      builder: (context) {
+                        final dirty = _blockIdleDirty();
+                        if (!dirty && !_coreNumbersSaving)
+                          return const SizedBox.shrink();
+                        return Padding(
+                          padding:
+                              const EdgeInsets.only(top: RecorderTokens.space3),
+                          child: FilledButton.icon(
+                            onPressed: (_coreNumbersSaving || !dirty)
+                                ? null
+                                : _saveCoreSettings,
+                            icon: const Icon(Icons.save_outlined),
+                            label: _coreNumbersSaving
+                                ? const Text("Saving…")
+                                : const Text("Save block/idle"),
+                          ),
+                        );
+                      },
                     ),
-                  ),
-                  SwitchListTile.adaptive(
-                    value: _storeExePath,
-                    onChanged: _coreSettingsSaving
-                        ? null
-                        : (v) async {
-                            if (v && !_storeExePath) {
-                              final ok = await showDialog<bool>(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: const Text(
-                                      "Enable L3 (high sensitivity)?"),
-                                  content: const Text(
-                                    "This stores full executable paths (and may contain usernames / project folders).\n\nYou can always turn it off later.",
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, false),
-                                        child: const Text("Cancel")),
-                                    FilledButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, true),
-                                        child: const Text("Enable")),
-                                  ],
-                                ),
-                              );
-                              if (ok != true) return;
-                            }
-
-                            setState(() {
-                              _storeExePath = v;
-                              if (v) _storeTitles = true;
-                            });
-                            await _savePrivacySettings();
-                          },
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text("Store full exe path (high sensitivity)"),
-                    subtitle:
-                        const Text("If off, Core drops exePath/pid fields."),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: RecorderTokens.space1),
-                    child: Text(
-                      _privacySaving
-                          ? "Saving privacy…"
-                          : "Privacy changes are saved automatically.",
-                      style: Theme.of(context).textTheme.labelMedium,
-                    ),
-                  ),
-                  if (_privacyLevel() != _PrivacyLevel.l1) ...[
-                    const SizedBox(height: RecorderTokens.space1),
+                    const SizedBox(height: RecorderTokens.space3),
+                    const Divider(),
+                    const SizedBox(height: RecorderTokens.space2),
+                    Text("Review reminders",
+                        style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(height: RecorderTokens.space2),
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Icon(Icons.info_outline,
                             size: 16,
@@ -2344,341 +2223,562 @@ class SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(width: RecorderTokens.space1),
                         Expanded(
                           child: Text(
-                            "To see titles in UI: enable “Send tab title” in the extension, and run windows_collector with --send-title.",
+                            "“Time to review” triggers when Core finds the most recent due block: long enough (min duration), not reviewed/skipped, and either you already moved on to a new block or the current block reached Block length. To reduce prompts: increase Block length / min duration / repeat.",
                             style: Theme.of(context).textTheme.labelMedium,
                           ),
                         ),
                       ],
                     ),
-                  ],
-                  if (_coreSettingsError != null) ...[
+                    const SizedBox(height: RecorderTokens.space2),
+                    TextField(
+                      controller: _reviewMinMinutes,
+                      enabled: !_coreSettingsSaving,
+                      decoration: const InputDecoration(
+                        labelText:
+                            "Min block duration to require review (minutes)",
+                        helperText:
+                            "Only blocks longer than this can become due (default 5m).",
+                      ),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      onChanged: (_) => _scheduleReviewSave(),
+                    ),
                     const SizedBox(height: RecorderTokens.space3),
-                    Text("Load/save error: $_coreSettingsError"),
-                    if ((_coreSettingsError ?? "").contains("http_404")) ...[
-                      const SizedBox(height: RecorderTokens.space1),
-                      Text(
-                        "Tip: 404 means this server does not implement /settings (dev ingest server or an older recorder_core). Restart recorder_core and re-check /settings.",
+                    TextField(
+                      controller: _reviewToastRepeatMinutes,
+                      enabled: !_coreSettingsSaving,
+                      decoration: const InputDecoration(
+                        labelText: "Repeat interval (minutes)",
+                        helperText:
+                            "Minimum minutes between reminders for the same due block (toast + in-app prompt). Default 10m.",
+                      ),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      onChanged: (_) => _scheduleReviewSave(),
+                    ),
+                    const SizedBox(height: RecorderTokens.space2),
+                    SwitchListTile.adaptive(
+                      value: _reviewNotifyWhenPaused,
+                      onChanged: _coreSettingsSaving
+                          ? null
+                          : (v) {
+                              setState(() => _reviewNotifyWhenPaused = v);
+                              _scheduleReviewSave(
+                                  delay: const Duration(milliseconds: 200));
+                            },
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text("Notify even when tracking is paused"),
+                      subtitle: const Text(
+                          "Applies to Windows toast + in-app prompt."),
+                    ),
+                    SwitchListTile.adaptive(
+                      value: _reviewNotifyWhenIdle,
+                      onChanged: _coreSettingsSaving
+                          ? null
+                          : (v) {
+                              setState(() => _reviewNotifyWhenIdle = v);
+                              _scheduleReviewSave(
+                                  delay: const Duration(milliseconds: 200));
+                            },
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text("Notify even when PC is idle"),
+                      subtitle:
+                          const Text("Applies to Windows toast (collector)."),
+                    ),
+                    Padding(
+                      padding:
+                          const EdgeInsets.only(top: RecorderTokens.space1),
+                      child: Text(
+                        _reviewSaving
+                            ? "Saving review reminders…"
+                            : "Review reminder changes are saved automatically.",
                         style: Theme.of(context).textTheme.labelMedium,
                       ),
+                    ),
+                    const SizedBox(height: RecorderTokens.space1),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline,
+                            size: 16,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant),
+                        const SizedBox(width: RecorderTokens.space1),
+                        Expanded(
+                          child: Text(
+                            "Windows toast settings take effect after restarting the desktop agent / collector.",
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: RecorderTokens.space3),
+                    const Divider(),
+                    const SizedBox(height: RecorderTokens.space2),
+                    Text("Privacy (Core)",
+                        style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(height: RecorderTokens.space2),
+                    Container(
+                      key: widget.tutorialPrivacyKey,
+                      child: SegmentedButton<_PrivacyLevel>(
+                        segments: const [
+                          ButtonSegment(
+                              value: _PrivacyLevel.l1, label: Text("L1")),
+                          ButtonSegment(
+                              value: _PrivacyLevel.l2, label: Text("L2")),
+                          ButtonSegment(
+                              value: _PrivacyLevel.l3, label: Text("L3")),
+                        ],
+                        selected: {_privacyLevel()},
+                        onSelectionChanged: _coreSettingsSaving
+                            ? null
+                            : (v) {
+                                final next =
+                                    v.isEmpty ? _privacyLevel() : v.first;
+                                _choosePrivacyLevel(next);
+                              },
+                      ),
+                    ),
+                    const SizedBox(height: RecorderTokens.space2),
+                    Text(
+                      _privacyLevelExplain(_privacyLevel()),
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                    const SizedBox(height: RecorderTokens.space2),
+                    SwitchListTile.adaptive(
+                      value: _storeTitles,
+                      onChanged: _coreSettingsSaving
+                          ? null
+                          : (v) {
+                              setState(() {
+                                _storeTitles = v;
+                                if (!v) _storeExePath = false;
+                              });
+                              unawaited(_savePrivacySettings());
+                            },
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text("Store window/tab titles (L2)"),
+                      subtitle: const Text(
+                        "If off, Core drops any title fields even if collectors/extensions send them.",
+                      ),
+                    ),
+                    SwitchListTile.adaptive(
+                      value: _storeExePath,
+                      onChanged: _coreSettingsSaving
+                          ? null
+                          : (v) async {
+                              if (v && !_storeExePath) {
+                                final ok = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text(
+                                        "Enable L3 (high sensitivity)?"),
+                                    content: const Text(
+                                      "This stores full executable paths (and may contain usernames / project folders).\n\nYou can always turn it off later.",
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, false),
+                                          child: const Text("Cancel")),
+                                      FilledButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, true),
+                                          child: const Text("Enable")),
+                                    ],
+                                  ),
+                                );
+                                if (ok != true) return;
+                              }
+
+                              setState(() {
+                                _storeExePath = v;
+                                if (v) _storeTitles = true;
+                              });
+                              await _savePrivacySettings();
+                            },
+                      contentPadding: EdgeInsets.zero,
+                      title:
+                          const Text("Store full exe path (high sensitivity)"),
+                      subtitle:
+                          const Text("If off, Core drops exePath/pid fields."),
+                    ),
+                    Padding(
+                      padding:
+                          const EdgeInsets.only(top: RecorderTokens.space1),
+                      child: Text(
+                        _privacySaving
+                            ? "Saving privacy…"
+                            : "Privacy changes are saved automatically.",
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                    ),
+                    if (_privacyLevel() != _PrivacyLevel.l1) ...[
+                      const SizedBox(height: RecorderTokens.space1),
+                      Row(
+                        children: [
+                          Icon(Icons.info_outline,
+                              size: 16,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant),
+                          const SizedBox(width: RecorderTokens.space1),
+                          Expanded(
+                            child: Text(
+                              "To see titles in UI: enable “Send tab title” in the extension, and run windows_collector with --send-title.",
+                              style: Theme.of(context).textTheme.labelMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (_coreSettingsError != null) ...[
+                      const SizedBox(height: RecorderTokens.space3),
+                      Text("Load/save error: $_coreSettingsError"),
+                      if ((_coreSettingsError ?? "").contains("http_404")) ...[
+                        const SizedBox(height: RecorderTokens.space1),
+                        Text(
+                          "Tip: 404 means this server does not implement /settings (dev ingest server or an older recorder_core). Restart recorder_core and re-check /settings.",
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                      ],
                     ],
                   ],
                 ],
-              ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: RecorderTokens.space6),
-        Row(
-          children: [
-            Expanded(
-                child: Text("Privacy rules",
-                    style: Theme.of(context).textTheme.titleMedium)),
-            FilledButton.icon(
-                onPressed: _addRule,
-                icon: const Icon(Icons.add),
-                label: const Text("Add")),
-          ],
-        ),
-        const SizedBox(height: RecorderTokens.space2),
-        TextField(
-          controller: _ruleQuery,
-          decoration: InputDecoration(
-            hintText: "Search rules…",
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: _ruleQuery.text.trim().isEmpty
-                ? null
-                : IconButton(
-                    tooltip: "Clear",
-                    onPressed: () => setState(() => _ruleQuery.text = ""),
-                    icon: const Icon(Icons.clear),
-                  ),
+        if (_settingsPanel == _SettingsPanel.trackingPrivacy)
+          const SizedBox(height: RecorderTokens.space6),
+        if (_settingsPanel == _SettingsPanel.trackingPrivacy)
+          Row(
+            children: [
+              Expanded(
+                  child: Text("Privacy rules",
+                      style: Theme.of(context).textTheme.titleMedium)),
+              FilledButton.icon(
+                  onPressed: _addRule,
+                  icon: const Icon(Icons.add),
+                  label: const Text("Add")),
+            ],
           ),
-          onChanged: (_) => setState(() {}),
-        ),
-        const SizedBox(height: RecorderTokens.space2),
-        Wrap(
-          spacing: RecorderTokens.space2,
-          runSpacing: RecorderTokens.space2,
-          children: [
-            ChoiceChip(
-              label: const Text("All"),
-              selected: _ruleFilter == _RuleFilter.all,
-              onSelected: (_) => setState(() => _ruleFilter = _RuleFilter.all),
-            ),
-            ChoiceChip(
-              label: const Text("Domains"),
-              selected: _ruleFilter == _RuleFilter.domains,
-              onSelected: (_) =>
-                  setState(() => _ruleFilter = _RuleFilter.domains),
-            ),
-            ChoiceChip(
-              label: const Text("Apps"),
-              selected: _ruleFilter == _RuleFilter.apps,
-              onSelected: (_) => setState(() => _ruleFilter = _RuleFilter.apps),
-            ),
-          ],
-        ),
-        const SizedBox(height: RecorderTokens.space3),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(RecorderTokens.space2),
-            child: Column(
-              children: [
-                if (_rulesLoading)
-                  const Padding(
-                    padding: EdgeInsets.all(RecorderTokens.space4),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (_rulesError != null)
-                  Padding(
-                    padding: const EdgeInsets.all(RecorderTokens.space4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text("Load failed: $_rulesError"),
-                        const SizedBox(height: RecorderTokens.space3),
-                        FilledButton.icon(
-                          onPressed: _loadRules,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text("Retry"),
-                        ),
-                      ],
+        if (_settingsPanel == _SettingsPanel.trackingPrivacy)
+          const SizedBox(height: RecorderTokens.space2),
+        if (_settingsPanel == _SettingsPanel.trackingPrivacy)
+          TextField(
+            controller: _ruleQuery,
+            decoration: InputDecoration(
+              hintText: "Search rules…",
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _ruleQuery.text.trim().isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: "Clear",
+                      onPressed: () => setState(() => _ruleQuery.text = ""),
+                      icon: const Icon(Icons.clear),
                     ),
-                  )
-                else if (_rules.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(RecorderTokens.space4),
-                    child:
-                        Text("No rules yet. Add a domain/app to drop or mask."),
-                  )
-                else
-                  ...(() {
-                    final filtered = _filteredRules();
-                    if (filtered.isEmpty) {
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        if (_settingsPanel == _SettingsPanel.trackingPrivacy)
+          const SizedBox(height: RecorderTokens.space2),
+        if (_settingsPanel == _SettingsPanel.trackingPrivacy)
+          Wrap(
+            spacing: RecorderTokens.space2,
+            runSpacing: RecorderTokens.space2,
+            children: [
+              ChoiceChip(
+                label: const Text("All"),
+                selected: _ruleFilter == _RuleFilter.all,
+                onSelected: (_) =>
+                    setState(() => _ruleFilter = _RuleFilter.all),
+              ),
+              ChoiceChip(
+                label: const Text("Domains"),
+                selected: _ruleFilter == _RuleFilter.domains,
+                onSelected: (_) =>
+                    setState(() => _ruleFilter = _RuleFilter.domains),
+              ),
+              ChoiceChip(
+                label: const Text("Apps"),
+                selected: _ruleFilter == _RuleFilter.apps,
+                onSelected: (_) =>
+                    setState(() => _ruleFilter = _RuleFilter.apps),
+              ),
+            ],
+          ),
+        if (_settingsPanel == _SettingsPanel.trackingPrivacy)
+          const SizedBox(height: RecorderTokens.space3),
+        if (_settingsPanel == _SettingsPanel.trackingPrivacy)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(RecorderTokens.space2),
+              child: Column(
+                children: [
+                  if (_rulesLoading)
+                    const Padding(
+                      padding: EdgeInsets.all(RecorderTokens.space4),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_rulesError != null)
+                    Padding(
+                      padding: const EdgeInsets.all(RecorderTokens.space4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Load failed: $_rulesError"),
+                          const SizedBox(height: RecorderTokens.space3),
+                          FilledButton.icon(
+                            onPressed: _loadRules,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text("Retry"),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (_rules.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(RecorderTokens.space4),
+                      child: Text(
+                          "No rules yet. Add a domain/app to drop or mask."),
+                    )
+                  else
+                    ...(() {
+                      final filtered = _filteredRules();
+                      if (filtered.isEmpty) {
+                        return [
+                          const Padding(
+                            padding: EdgeInsets.all(RecorderTokens.space4),
+                            child: Text("No matching rules."),
+                          ),
+                        ];
+                      }
+
+                      IconData icon(PrivacyRule r) {
+                        if (r.action == "mask")
+                          return Icons.visibility_off_outlined;
+                        return Icons.block;
+                      }
+
+                      String kindLabel(PrivacyRule r) {
+                        return r.kind == "domain" ? "Domain" : "App";
+                      }
+
+                      String actionLabel(PrivacyRule r) {
+                        return r.action == "mask" ? "Mask" : "Drop";
+                      }
+
                       return [
-                        const Padding(
-                          padding: EdgeInsets.all(RecorderTokens.space4),
-                          child: Text("No matching rules."),
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            left: RecorderTokens.space3,
+                            right: RecorderTokens.space3,
+                            top: RecorderTokens.space2,
+                            bottom: RecorderTokens.space1,
+                          ),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              "${filtered.length} / ${_rules.length}",
+                              style: Theme.of(context).textTheme.labelMedium,
+                            ),
+                          ),
+                        ),
+                        ...filtered.map(
+                          (r) => ListTile(
+                            minVerticalPadding: RecorderTokens.space2,
+                            leading: Icon(icon(r), size: 18),
+                            title: Text(r.value,
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                            subtitle:
+                                Text("${kindLabel(r)} · ${actionLabel(r)}"),
+                            trailing: IconButton(
+                              onPressed: () => _deleteRule(r),
+                              tooltip: "Delete",
+                              icon: const Icon(Icons.delete_outline),
+                            ),
+                          ),
                         ),
                       ];
-                    }
-
-                    IconData icon(PrivacyRule r) {
-                      if (r.action == "mask")
-                        return Icons.visibility_off_outlined;
-                      return Icons.block;
-                    }
-
-                    String kindLabel(PrivacyRule r) {
-                      return r.kind == "domain" ? "Domain" : "App";
-                    }
-
-                    String actionLabel(PrivacyRule r) {
-                      return r.action == "mask" ? "Mask" : "Drop";
-                    }
-
-                    return [
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          left: RecorderTokens.space3,
-                          right: RecorderTokens.space3,
-                          top: RecorderTokens.space2,
-                          bottom: RecorderTokens.space1,
+                    })(),
+                ],
+              ),
+            ),
+          ),
+        if (_settingsPanel == _SettingsPanel.diagnostics)
+          const SizedBox(height: RecorderTokens.space6),
+        if (_settingsPanel == _SettingsPanel.diagnostics)
+          Row(
+            children: [
+              Expanded(
+                  child: Text("Recent events",
+                      style: Theme.of(context).textTheme.titleMedium)),
+              OutlinedButton.icon(
+                onPressed: _eventsLoading ? null : _loadEvents,
+                icon: const Icon(Icons.refresh),
+                label: const Text("Refresh"),
+              ),
+            ],
+          ),
+        if (_settingsPanel == _SettingsPanel.diagnostics)
+          const SizedBox(height: RecorderTokens.space3),
+        if (_settingsPanel == _SettingsPanel.diagnostics)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(RecorderTokens.space2),
+              child: Column(
+                children: [
+                  if (_eventsLoading)
+                    const Padding(
+                      padding: EdgeInsets.all(RecorderTokens.space4),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_eventsError != null)
+                    Padding(
+                      padding: const EdgeInsets.all(RecorderTokens.space4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Load failed: $_eventsError"),
+                          const SizedBox(height: RecorderTokens.space3),
+                          FilledButton.icon(
+                            onPressed: _loadEvents,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text("Retry"),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (_events.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(RecorderTokens.space4),
+                      child: Text(
+                          "No events yet. Install the extension / run collectors, then switch apps or tabs."),
+                    )
+                  else
+                    ..._events.take(20).map((e) {
+                      final entity = e.entity ?? "(no entity)";
+                      final meta = "${_hhmm(e.ts)} · ${e.source} · ${e.event}";
+                      final t = (e.title ?? "").trim();
+                      final subtitle = t.isEmpty ? meta : "$meta\n$t";
+                      return ListTile(
+                        minVerticalPadding: RecorderTokens.space2,
+                        title: Text(entity,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(subtitle,
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                        trailing: IconButton(
+                          onPressed: e.entity == null
+                              ? null
+                              : () async {
+                                  await Clipboard.setData(
+                                      ClipboardData(text: e.entity!));
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content:
+                                            Text("Copied entity to clipboard")),
+                                  );
+                                },
+                          tooltip: "Copy",
+                          icon: const Icon(Icons.content_copy),
                         ),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            "${filtered.length} / ${_rules.length}",
-                            style: Theme.of(context).textTheme.labelMedium,
+                      );
+                    }),
+                ],
+              ),
+            ),
+          ),
+        if (_settingsPanel == _SettingsPanel.data)
+          const SizedBox(height: RecorderTokens.space6),
+        if (_settingsPanel == _SettingsPanel.data)
+          Text("Export", style: Theme.of(context).textTheme.titleMedium),
+        if (_settingsPanel == _SettingsPanel.data)
+          const SizedBox(height: RecorderTokens.space3),
+        if (_settingsPanel == _SettingsPanel.data)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(RecorderTokens.space4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: _dateLocal,
+                    decoration: const InputDecoration(
+                      labelText: "Date (Local)",
+                      hintText: "YYYY-MM-DD",
+                    ),
+                  ),
+                  const SizedBox(height: RecorderTokens.space4),
+                  Wrap(
+                    spacing: RecorderTokens.space3,
+                    runSpacing: RecorderTokens.space2,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => _showTextExport(
+                          title: "Markdown export",
+                          load: () => widget.client.exportMarkdown(
+                            date: _dateLocal.text.trim(),
+                            tzOffsetMinutes:
+                                DateTime.now().timeZoneOffset.inMinutes,
                           ),
                         ),
+                        icon: const Icon(Icons.description_outlined),
+                        label: const Text("Markdown"),
                       ),
-                      ...filtered.map(
-                        (r) => ListTile(
-                          minVerticalPadding: RecorderTokens.space2,
-                          leading: Icon(icon(r), size: 18),
-                          title: Text(r.value,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text("${kindLabel(r)} · ${actionLabel(r)}"),
-                          trailing: IconButton(
-                            onPressed: () => _deleteRule(r),
-                            tooltip: "Delete",
-                            icon: const Icon(Icons.delete_outline),
+                      OutlinedButton.icon(
+                        onPressed: () => _showTextExport(
+                          title: "CSV export",
+                          load: () => widget.client.exportCsv(
+                            date: _dateLocal.text.trim(),
+                            tzOffsetMinutes:
+                                DateTime.now().timeZoneOffset.inMinutes,
                           ),
                         ),
+                        icon: const Icon(Icons.table_chart_outlined),
+                        label: const Text("CSV"),
                       ),
-                    ];
-                  })(),
-              ],
+                    ],
+                  ),
+                  const SizedBox(height: RecorderTokens.space4),
+                  const Divider(),
+                  const SizedBox(height: RecorderTokens.space2),
+                  Text("Danger zone",
+                      style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: RecorderTokens.space2),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor:
+                          Theme.of(context).colorScheme.errorContainer,
+                      foregroundColor:
+                          Theme.of(context).colorScheme.onErrorContainer,
+                    ),
+                    onPressed: _wipeAllLoading || _deleteDayLoading
+                        ? null
+                        : _wipeAllData,
+                    icon: const Icon(Icons.delete_sweep_outlined),
+                    label: _wipeAllLoading
+                        ? const Text("Wiping…")
+                        : const Text("Wipe ALL data"),
+                  ),
+                  const SizedBox(height: RecorderTokens.space2),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor:
+                          Theme.of(context).colorScheme.errorContainer,
+                      foregroundColor:
+                          Theme.of(context).colorScheme.onErrorContainer,
+                    ),
+                    onPressed: _deleteDayLoading ? null : _deleteDayData,
+                    icon: const Icon(Icons.delete_forever_outlined),
+                    label: _deleteDayLoading
+                        ? const Text("Deleting…")
+                        : const Text("Delete this day"),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: RecorderTokens.space6),
-        Row(
-          children: [
-            Expanded(
-                child: Text("Recent events",
-                    style: Theme.of(context).textTheme.titleMedium)),
-            OutlinedButton.icon(
-              onPressed: _eventsLoading ? null : _loadEvents,
-              icon: const Icon(Icons.refresh),
-              label: const Text("Refresh"),
-            ),
-          ],
-        ),
-        const SizedBox(height: RecorderTokens.space3),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(RecorderTokens.space2),
-            child: Column(
-              children: [
-                if (_eventsLoading)
-                  const Padding(
-                    padding: EdgeInsets.all(RecorderTokens.space4),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (_eventsError != null)
-                  Padding(
-                    padding: const EdgeInsets.all(RecorderTokens.space4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text("Load failed: $_eventsError"),
-                        const SizedBox(height: RecorderTokens.space3),
-                        FilledButton.icon(
-                          onPressed: _loadEvents,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text("Retry"),
-                        ),
-                      ],
-                    ),
-                  )
-                else if (_events.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(RecorderTokens.space4),
-                    child: Text(
-                        "No events yet. Install the extension / run collectors, then switch apps or tabs."),
-                  )
-                else
-                  ..._events.take(20).map((e) {
-                    final entity = e.entity ?? "(no entity)";
-                    final meta = "${_hhmm(e.ts)} · ${e.source} · ${e.event}";
-                    final t = (e.title ?? "").trim();
-                    final subtitle = t.isEmpty ? meta : "$meta\n$t";
-                    return ListTile(
-                      minVerticalPadding: RecorderTokens.space2,
-                      title: Text(entity,
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(subtitle,
-                          maxLines: 2, overflow: TextOverflow.ellipsis),
-                      trailing: IconButton(
-                        onPressed: e.entity == null
-                            ? null
-                            : () async {
-                                await Clipboard.setData(
-                                    ClipboardData(text: e.entity!));
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content:
-                                          Text("Copied entity to clipboard")),
-                                );
-                              },
-                        tooltip: "Copy",
-                        icon: const Icon(Icons.content_copy),
-                      ),
-                    );
-                  }),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: RecorderTokens.space6),
-        Text("Export", style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: RecorderTokens.space3),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(RecorderTokens.space4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: _dateLocal,
-                  decoration: const InputDecoration(
-                    labelText: "Date (Local)",
-                    hintText: "YYYY-MM-DD",
-                  ),
-                ),
-                const SizedBox(height: RecorderTokens.space4),
-                Wrap(
-                  spacing: RecorderTokens.space3,
-                  runSpacing: RecorderTokens.space2,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () => _showTextExport(
-                        title: "Markdown export",
-                        load: () => widget.client.exportMarkdown(
-                          date: _dateLocal.text.trim(),
-                          tzOffsetMinutes:
-                              DateTime.now().timeZoneOffset.inMinutes,
-                        ),
-                      ),
-                      icon: const Icon(Icons.description_outlined),
-                      label: const Text("Markdown"),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _showTextExport(
-                        title: "CSV export",
-                        load: () => widget.client.exportCsv(
-                          date: _dateLocal.text.trim(),
-                          tzOffsetMinutes:
-                              DateTime.now().timeZoneOffset.inMinutes,
-                        ),
-                      ),
-                      icon: const Icon(Icons.table_chart_outlined),
-                      label: const Text("CSV"),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: RecorderTokens.space4),
-                const Divider(),
-                const SizedBox(height: RecorderTokens.space2),
-                Text("Danger zone",
-                    style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: RecorderTokens.space2),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor:
-                        Theme.of(context).colorScheme.errorContainer,
-                    foregroundColor:
-                        Theme.of(context).colorScheme.onErrorContainer,
-                  ),
-                  onPressed: _wipeAllLoading || _deleteDayLoading
-                      ? null
-                      : _wipeAllData,
-                  icon: const Icon(Icons.delete_sweep_outlined),
-                  label: _wipeAllLoading
-                      ? const Text("Wiping…")
-                      : const Text("Wipe ALL data"),
-                ),
-                const SizedBox(height: RecorderTokens.space2),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor:
-                        Theme.of(context).colorScheme.errorContainer,
-                    foregroundColor:
-                        Theme.of(context).colorScheme.onErrorContainer,
-                  ),
-                  onPressed: _deleteDayLoading ? null : _deleteDayData,
-                  icon: const Icon(Icons.delete_forever_outlined),
-                  label: _deleteDayLoading
-                      ? const Text("Deleting…")
-                      : const Text("Delete this day"),
-                ),
-              ],
-            ),
-          ),
-        ),
       ],
     );
   }
