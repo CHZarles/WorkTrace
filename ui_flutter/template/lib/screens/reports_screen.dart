@@ -21,6 +21,16 @@ enum _TodoListFilter { all, today, scheduled, reminder, done }
 
 enum _TodoListSort { smart, dueSoon, updated }
 
+enum _WeekCalendarScale { fullDay, standard, detail }
+
+enum _ReportSettingsSection {
+  connection,
+  automation,
+  planner,
+  storage,
+  prompts
+}
+
 class _ScheduledTodoLayout {
   const _ScheduledTodoLayout({
     required this.todo,
@@ -86,7 +96,11 @@ class ReportsScreenState extends State<ReportsScreen> {
   _TodoCalendarView _todoCalendarView = _TodoCalendarView.week;
   _TodoListFilter _todoListFilter = _TodoListFilter.all;
   _TodoListSort _todoListSort = _TodoListSort.smart;
+  _WeekCalendarScale _weekCalendarScale = _WeekCalendarScale.fullDay;
+  _ReportSettingsSection _reportSettingsSection =
+      _ReportSettingsSection.connection;
   DateTime _todoAnchorDay = DateTime.now();
+  bool _plannerShowInsights = false;
 
   bool _enabled = false;
   bool _dailyEnabled = false;
@@ -706,6 +720,58 @@ class ReportsScreenState extends State<ReportsScreen> {
         return "Due soon";
       case _TodoListSort.updated:
         return "Recently updated";
+    }
+  }
+
+  String _weekCalendarScaleLabel(_WeekCalendarScale scale) {
+    switch (scale) {
+      case _WeekCalendarScale.fullDay:
+        return "24h";
+      case _WeekCalendarScale.standard:
+        return "Standard";
+      case _WeekCalendarScale.detail:
+        return "Detail";
+    }
+  }
+
+  double _weekCalendarHourHeight() {
+    switch (_weekCalendarScale) {
+      case _WeekCalendarScale.fullDay:
+        return 30.0;
+      case _WeekCalendarScale.standard:
+        return 44.0;
+      case _WeekCalendarScale.detail:
+        return 58.0;
+    }
+  }
+
+  String _reportSettingsSectionLabel(_ReportSettingsSection section) {
+    switch (section) {
+      case _ReportSettingsSection.connection:
+        return "Connection";
+      case _ReportSettingsSection.automation:
+        return "Automation";
+      case _ReportSettingsSection.planner:
+        return "Planner";
+      case _ReportSettingsSection.storage:
+        return "Storage";
+      case _ReportSettingsSection.prompts:
+        return "Prompts";
+    }
+  }
+
+  IconData _reportSettingsSectionIcon(_ReportSettingsSection section) {
+    switch (section) {
+      case _ReportSettingsSection.connection:
+        return Icons.link_outlined;
+      case _ReportSettingsSection.automation:
+        return Icons.schedule_outlined;
+      case _ReportSettingsSection.planner:
+        return Icons.calendar_view_week_outlined;
+      case _ReportSettingsSection.storage:
+        return Icons.folder_open_outlined;
+      case _ReportSettingsSection.prompts:
+        return Icons.auto_awesome_outlined;
     }
   }
 
@@ -1589,7 +1655,11 @@ class ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Widget _todoWeekView(BuildContext context, DateTime day) {
+  Widget _todoWeekView(
+    BuildContext context,
+    DateTime day, {
+    required double hourHeight,
+  }) {
     final start = _startOfWeekMonday(day);
     final days = List.generate(7, (i) => start.add(Duration(days: i)));
     final endExclusive = start.add(const Duration(days: 7));
@@ -1604,7 +1674,6 @@ class ReportsScreenState extends State<ReportsScreen> {
 
     const leftAxisWidth = 56.0;
     const headerHeight = 38.0;
-    const hourHeight = 56.0;
     final gridHeight = 24 * hourHeight;
     final today = _normalizeDay(DateTime.now());
     final now = DateTime.now();
@@ -2378,6 +2447,7 @@ class ReportsScreenState extends State<ReportsScreen> {
     required String subtitle,
     required List<ReportTodo> todos,
     Color? tint,
+    bool initiallyExpanded = true,
   }) {
     final scheme = Theme.of(context).colorScheme;
     final sectionTint = tint ?? scheme.primary;
@@ -2389,10 +2459,17 @@ class ReportsScreenState extends State<ReportsScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(
+            horizontal: RecorderTokens.space2,
+            vertical: 2,
+          ),
+          childrenPadding:
+              const EdgeInsets.symmetric(horizontal: RecorderTokens.space2),
+          initiallyExpanded: initiallyExpanded,
+          title: Row(
             children: [
               Icon(icon, size: 16, color: sectionTint),
               const SizedBox(width: 6),
@@ -2416,17 +2493,18 @@ class ReportsScreenState extends State<ReportsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
+          subtitle: Text(
             subtitle,
             style: Theme.of(context)
                 .textTheme
                 .labelSmall
                 ?.copyWith(color: scheme.onSurfaceVariant),
           ),
-          const SizedBox(height: RecorderTokens.space2),
-          for (final todo in todos) _todoChip(context, todo),
-        ],
+          children: [
+            const SizedBox(height: 4),
+            for (final todo in todos) _todoChip(context, todo),
+          ],
+        ),
       ),
     );
   }
@@ -2609,6 +2687,7 @@ class ReportsScreenState extends State<ReportsScreen> {
               subtitle: "Fix these first to recover execution reliability.",
               todos: overdue,
               tint: scheme.error,
+              initiallyExpanded: true,
             ),
           if (today.isNotEmpty)
             _todoSectionCard(
@@ -2618,6 +2697,7 @@ class ReportsScreenState extends State<ReportsScreen> {
               subtitle: "Current focus lane.",
               todos: today,
               tint: scheme.primary,
+              initiallyExpanded: true,
             ),
           if (scheduled.isNotEmpty)
             _todoSectionCard(
@@ -2627,6 +2707,7 @@ class ReportsScreenState extends State<ReportsScreen> {
               subtitle: "Calendar-anchored tasks with defined time blocks.",
               todos: scheduled,
               tint: scheme.secondary,
+              initiallyExpanded: false,
             ),
           if (backlog.isNotEmpty)
             _todoSectionCard(
@@ -2636,6 +2717,7 @@ class ReportsScreenState extends State<ReportsScreen> {
               subtitle: "Plan these into calendar when ready.",
               todos: backlog,
               tint: scheme.tertiary,
+              initiallyExpanded: false,
             ),
           if (done.isNotEmpty) ...[
             ExpansionTile(
@@ -2667,6 +2749,14 @@ class ReportsScreenState extends State<ReportsScreen> {
 
   Widget _todoCalendarDimension(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final hourHeight = _weekCalendarHourHeight();
+    final weekContentHeight = (38 + 24 * hourHeight).toDouble();
+    final targetViewport = (MediaQuery.of(context).size.height * 0.78)
+        .clamp(520.0, 980.0)
+        .toDouble();
+    final weekViewportHeight = _weekCalendarScale == _WeekCalendarScale.fullDay
+        ? weekContentHeight + 16
+        : targetViewport;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2730,10 +2820,23 @@ class ReportsScreenState extends State<ReportsScreen> {
         ),
         if (_todoCalendarView == _TodoCalendarView.week) ...[
           const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final scale in _WeekCalendarScale.values)
+                ChoiceChip(
+                  label: Text(_weekCalendarScaleLabel(scale)),
+                  selected: _weekCalendarScale == scale,
+                  onSelected: (_) => setState(() => _weekCalendarScale = scale),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              "Interaction (Google Calendar style): click empty week grid to create timed TODO; drag existing blocks to reschedule (15m snap).",
+              "Tip: select 24h to view full-day grid; click empty grid to create TODO; drag block to reschedule (15m snap).",
               style: Theme.of(context)
                   .textTheme
                   .labelSmall
@@ -2812,7 +2915,14 @@ class ReportsScreenState extends State<ReportsScreen> {
         ),
         const SizedBox(height: RecorderTokens.space2),
         if (_todoCalendarView == _TodoCalendarView.week)
-          SizedBox(height: 460, child: _todoWeekView(context, _todoAnchorDay))
+          SizedBox(
+            height: weekViewportHeight,
+            child: _todoWeekView(
+              context,
+              _todoAnchorDay,
+              hourHeight: hourHeight,
+            ),
+          )
         else
           _todoMonthView(context, _todoAnchorDay),
       ],
@@ -2828,18 +2938,63 @@ class ReportsScreenState extends State<ReportsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text("Planner",
-                  style: Theme.of(context).textTheme.titleLarge),
-            ),
-            FilledButton.tonalIcon(
-              onPressed: _todoBusy ? null : () => _openTodoEditor(),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text("New TODO"),
-            ),
-          ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 760) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Planner",
+                      style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: RecorderTokens.space2),
+                  Wrap(
+                    spacing: RecorderTokens.space2,
+                    runSpacing: RecorderTokens.space2,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => setState(
+                            () => _plannerShowInsights = !_plannerShowInsights),
+                        icon: Icon(_plannerShowInsights
+                            ? Icons.view_sidebar_outlined
+                            : Icons.view_sidebar),
+                        label: Text(_plannerShowInsights
+                            ? "Hide insights"
+                            : "Insights"),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: _todoBusy ? null : () => _openTodoEditor(),
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text("New TODO"),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(
+                  child: Text("Planner",
+                      style: Theme.of(context).textTheme.titleLarge),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => setState(
+                      () => _plannerShowInsights = !_plannerShowInsights),
+                  icon: Icon(_plannerShowInsights
+                      ? Icons.view_sidebar_outlined
+                      : Icons.view_sidebar),
+                  label:
+                      Text(_plannerShowInsights ? "Hide insights" : "Insights"),
+                ),
+                const SizedBox(width: RecorderTokens.space2),
+                FilledButton.tonalIcon(
+                  onPressed: _todoBusy ? null : () => _openTodoEditor(),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text("New TODO"),
+                ),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 6),
         Container(
@@ -2885,6 +3040,9 @@ class ReportsScreenState extends State<ReportsScreen> {
         const SizedBox(height: RecorderTokens.space2),
         LayoutBuilder(
           builder: (context, constraints) {
+            if (!_plannerShowInsights) {
+              return mainPanel;
+            }
             if (constraints.maxWidth >= 1160) {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3084,275 +3242,322 @@ class ReportsScreenState extends State<ReportsScreen> {
               ),
               children: [
                 const SizedBox(height: RecorderTokens.space2),
-                SwitchListTile(
-                  title: const Text("Enable LLM reports"),
-                  subtitle: const Text(
-                      "Core runs auto-generation while it is running (UI can be closed)."),
-                  value: _enabled,
-                  onChanged: (v) {
-                    setState(() => _enabled = v);
-                    _scheduleSave(delay: const Duration(milliseconds: 200));
-                  },
+                Text(
+                  "Layered setup: choose one section to reduce visual noise.",
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelMedium
+                      ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: RecorderTokens.space2),
-                TextField(
-                  controller: _apiBaseUrl,
-                  decoration: const InputDecoration(
-                    labelText: "Provider base URL",
-                    hintText: "https://api.openai.com/v1",
-                  ),
-                  onChanged: (_) => _scheduleSave(),
+                Wrap(
+                  spacing: RecorderTokens.space2,
+                  runSpacing: RecorderTokens.space1,
+                  children: [
+                    for (final section in _ReportSettingsSection.values)
+                      ChoiceChip(
+                        avatar: Icon(
+                          _reportSettingsSectionIcon(section),
+                          size: 16,
+                        ),
+                        label: Text(_reportSettingsSectionLabel(section)),
+                        selected: _reportSettingsSection == section,
+                        onSelected: (_) =>
+                            setState(() => _reportSettingsSection = section),
+                      ),
+                  ],
                 ),
-                const SizedBox(height: RecorderTokens.space3),
-                TextField(
-                  controller: _apiKey,
-                  obscureText: _apiKeyObscure,
-                  decoration: InputDecoration(
-                    labelText: "API key",
-                    suffixIcon: IconButton(
-                      tooltip: _apiKeyObscure ? "Show" : "Hide",
-                      onPressed: () =>
-                          setState(() => _apiKeyObscure = !_apiKeyObscure),
-                      icon: Icon(_apiKeyObscure
-                          ? Icons.visibility
-                          : Icons.visibility_off),
-                    ),
-                  ),
-                  onChanged: (_) => _scheduleSave(),
-                ),
-                const SizedBox(height: RecorderTokens.space3),
-                TextField(
-                  controller: _model,
-                  decoration: const InputDecoration(
-                    labelText: "Model",
-                    hintText: "gpt-4o-mini",
-                  ),
-                  onChanged: (_) => _scheduleSave(),
-                ),
-                const SizedBox(height: RecorderTokens.space3),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text("Daily schedule"),
-                  subtitle: Text(
-                    _dailyEnabled
-                        ? "At ${_hhmmFromMinutes(_dailyAtMinutes)} (yesterday)"
-                        : "OFF",
-                  ),
-                  trailing: Switch(
-                    value: _dailyEnabled,
+                const SizedBox(height: RecorderTokens.space2),
+                if (_reportSettingsSection ==
+                    _ReportSettingsSection.connection) ...[
+                  SwitchListTile(
+                    title: const Text("Enable LLM reports"),
+                    subtitle: const Text(
+                        "Core runs auto-generation while it is running (UI can be closed)."),
+                    value: _enabled,
                     onChanged: (v) {
-                      setState(() => _dailyEnabled = v);
+                      setState(() => _enabled = v);
                       _scheduleSave(delay: const Duration(milliseconds: 200));
                     },
                   ),
-                  onTap: () async {
-                    final picked = await showTimePicker(
-                      context: context,
-                      initialTime: TimeOfDay(
-                        hour: (_dailyAtMinutes ~/ 60).clamp(0, 23),
-                        minute: (_dailyAtMinutes % 60).clamp(0, 59),
-                      ),
-                    );
-                    if (picked == null) return;
-                    final minutes =
-                        (picked.hour * 60 + picked.minute).clamp(0, 1439);
-                    setState(() {
-                      _dailyAtMinutes = minutes;
-                      _dailyEnabled = true;
-                    });
-                    _scheduleSave(delay: const Duration(milliseconds: 200));
-                  },
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text("Weekly schedule"),
-                  subtitle: Text(
-                    _weeklyEnabled
-                        ? "${_weekdayLabel(_weeklyWeekday)} ${_hhmmFromMinutes(_weeklyAtMinutes)} (last week)"
-                        : "OFF",
+                  const SizedBox(height: RecorderTokens.space2),
+                  TextField(
+                    controller: _apiBaseUrl,
+                    decoration: const InputDecoration(
+                      labelText: "Provider base URL",
+                      hintText: "https://api.openai.com/v1",
+                    ),
+                    onChanged: (_) => _scheduleSave(),
                   ),
-                  trailing: Switch(
-                    value: _weeklyEnabled,
-                    onChanged: (v) {
-                      setState(() => _weeklyEnabled = v);
+                  const SizedBox(height: RecorderTokens.space3),
+                  TextField(
+                    controller: _apiKey,
+                    obscureText: _apiKeyObscure,
+                    decoration: InputDecoration(
+                      labelText: "API key",
+                      suffixIcon: IconButton(
+                        tooltip: _apiKeyObscure ? "Show" : "Hide",
+                        onPressed: () =>
+                            setState(() => _apiKeyObscure = !_apiKeyObscure),
+                        icon: Icon(_apiKeyObscure
+                            ? Icons.visibility
+                            : Icons.visibility_off),
+                      ),
+                    ),
+                    onChanged: (_) => _scheduleSave(),
+                  ),
+                  const SizedBox(height: RecorderTokens.space3),
+                  TextField(
+                    controller: _model,
+                    decoration: const InputDecoration(
+                      labelText: "Model",
+                      hintText: "gpt-4o-mini",
+                    ),
+                    onChanged: (_) => _scheduleSave(),
+                  ),
+                ],
+                if (_reportSettingsSection ==
+                    _ReportSettingsSection.automation) ...[
+                  Text(
+                    "Automation window",
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "Set report generation schedule. Core executes this in background.",
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelMedium
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: RecorderTokens.space2),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text("Daily schedule"),
+                    subtitle: Text(
+                      _dailyEnabled
+                          ? "At ${_hhmmFromMinutes(_dailyAtMinutes)} (yesterday)"
+                          : "OFF",
+                    ),
+                    trailing: Switch(
+                      value: _dailyEnabled,
+                      onChanged: (v) {
+                        setState(() => _dailyEnabled = v);
+                        _scheduleSave(delay: const Duration(milliseconds: 200));
+                      },
+                    ),
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay(
+                          hour: (_dailyAtMinutes ~/ 60).clamp(0, 23),
+                          minute: (_dailyAtMinutes % 60).clamp(0, 59),
+                        ),
+                      );
+                      if (picked == null) return;
+                      final minutes =
+                          (picked.hour * 60 + picked.minute).clamp(0, 1439);
+                      setState(() {
+                        _dailyAtMinutes = minutes;
+                        _dailyEnabled = true;
+                      });
                       _scheduleSave(delay: const Duration(milliseconds: 200));
                     },
                   ),
-                  onTap: () async {
-                    final picked = await showTimePicker(
-                      context: context,
-                      initialTime: TimeOfDay(
-                        hour: (_weeklyAtMinutes ~/ 60).clamp(0, 23),
-                        minute: (_weeklyAtMinutes % 60).clamp(0, 59),
-                      ),
-                    );
-                    if (picked == null) return;
-                    final minutes =
-                        (picked.hour * 60 + picked.minute).clamp(0, 1439);
-                    setState(() {
-                      _weeklyAtMinutes = minutes;
-                      _weeklyEnabled = true;
-                    });
-                    _scheduleSave(delay: const Duration(milliseconds: 200));
-                  },
-                ),
-                Row(
-                  children: [
-                    const SizedBox(width: 38),
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        initialValue: _weeklyWeekday,
-                        decoration: const InputDecoration(
-                          labelText: "Weekly weekday",
-                          isDense: true,
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                              value: DateTime.monday, child: Text("Mon")),
-                          DropdownMenuItem(
-                              value: DateTime.tuesday, child: Text("Tue")),
-                          DropdownMenuItem(
-                              value: DateTime.wednesday, child: Text("Wed")),
-                          DropdownMenuItem(
-                              value: DateTime.thursday, child: Text("Thu")),
-                          DropdownMenuItem(
-                              value: DateTime.friday, child: Text("Fri")),
-                          DropdownMenuItem(
-                              value: DateTime.saturday, child: Text("Sat")),
-                          DropdownMenuItem(
-                              value: DateTime.sunday, child: Text("Sun")),
-                        ],
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setState(() => _weeklyWeekday = v);
-                          _scheduleSave(
-                              delay: const Duration(milliseconds: 200));
-                        },
-                      ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text("Weekly schedule"),
+                    subtitle: Text(
+                      _weeklyEnabled
+                          ? "${_weekdayLabel(_weeklyWeekday)} ${_hhmmFromMinutes(_weeklyAtMinutes)} (last week)"
+                          : "OFF",
                     ),
-                  ],
-                ),
-                const SizedBox(height: RecorderTokens.space3),
-                _todoPlannerSection(context),
-                const SizedBox(height: RecorderTokens.space2),
-                ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: EdgeInsets.zero,
-                  title: const Text("Storage"),
-                  subtitle: Text(_effectiveOutputDir == null
-                      ? "Default path"
-                      : "Output folder configured"),
-                  children: [
-                    SwitchListTile(
-                      title: const Text("Save Markdown (.md)"),
-                      subtitle: const Text("Recommended (readable)."),
-                      value: _saveMd,
+                    trailing: Switch(
+                      value: _weeklyEnabled,
                       onChanged: (v) {
-                        setState(() => _saveMd = v);
+                        setState(() => _weeklyEnabled = v);
                         _scheduleSave(delay: const Duration(milliseconds: 200));
                       },
                     ),
-                    SwitchListTile(
-                      title: const Text("Also save CSV (.csv)"),
-                      subtitle: const Text("Optional (analysis/import)."),
-                      value: _saveCsv,
-                      onChanged: (v) {
-                        setState(() => _saveCsv = v);
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay(
+                          hour: (_weeklyAtMinutes ~/ 60).clamp(0, 23),
+                          minute: (_weeklyAtMinutes % 60).clamp(0, 59),
+                        ),
+                      );
+                      if (picked == null) return;
+                      final minutes =
+                          (picked.hour * 60 + picked.minute).clamp(0, 1439);
+                      setState(() {
+                        _weeklyAtMinutes = minutes;
+                        _weeklyEnabled = true;
+                      });
+                      _scheduleSave(delay: const Duration(milliseconds: 200));
+                    },
+                  ),
+                  Row(
+                    children: [
+                      const SizedBox(width: 38),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          initialValue: _weeklyWeekday,
+                          decoration: const InputDecoration(
+                            labelText: "Weekly weekday",
+                            isDense: true,
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                                value: DateTime.monday, child: Text("Mon")),
+                            DropdownMenuItem(
+                                value: DateTime.tuesday, child: Text("Tue")),
+                            DropdownMenuItem(
+                                value: DateTime.wednesday, child: Text("Wed")),
+                            DropdownMenuItem(
+                                value: DateTime.thursday, child: Text("Thu")),
+                            DropdownMenuItem(
+                                value: DateTime.friday, child: Text("Fri")),
+                            DropdownMenuItem(
+                                value: DateTime.saturday, child: Text("Sat")),
+                            DropdownMenuItem(
+                                value: DateTime.sunday, child: Text("Sun")),
+                          ],
+                          onChanged: (v) {
+                            if (v == null) return;
+                            setState(() => _weeklyWeekday = v);
+                            _scheduleSave(
+                                delay: const Duration(milliseconds: 200));
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (_reportSettingsSection ==
+                    _ReportSettingsSection.planner) ...[
+                  Text(
+                    "Planner",
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "Focus view for TODO and Calendar. Use Insights toggle if you need side context.",
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelMedium
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: RecorderTokens.space2),
+                  _todoPlannerSection(context),
+                ],
+                if (_reportSettingsSection ==
+                    _ReportSettingsSection.storage) ...[
+                  SwitchListTile(
+                    title: const Text("Save Markdown (.md)"),
+                    subtitle: const Text("Recommended (readable)."),
+                    value: _saveMd,
+                    onChanged: (v) {
+                      setState(() => _saveMd = v);
+                      _scheduleSave(delay: const Duration(milliseconds: 200));
+                    },
+                  ),
+                  SwitchListTile(
+                    title: const Text("Also save CSV (.csv)"),
+                    subtitle: const Text("Optional (analysis/import)."),
+                    value: _saveCsv,
+                    onChanged: (v) {
+                      setState(() => _saveCsv = v);
+                      _scheduleSave(delay: const Duration(milliseconds: 200));
+                    },
+                  ),
+                  const SizedBox(height: RecorderTokens.space2),
+                  TextField(
+                    controller: _outputDir,
+                    decoration: const InputDecoration(
+                      labelText: "Output folder (optional)",
+                      hintText: "Leave empty for default",
+                    ),
+                    onChanged: (_) => _scheduleSave(),
+                  ),
+                  const SizedBox(height: RecorderTokens.space2),
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          size: 16, color: scheme.onSurfaceVariant),
+                      const SizedBox(width: RecorderTokens.space2),
+                      Expanded(
+                        child: Text(
+                          (_effectiveOutputDir ?? "").trim().isEmpty
+                              ? "Files are saved under Core data directory."
+                              : "Effective output: ${_effectiveOutputDir!.trim()}",
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                      ),
+                      if ((_effectiveOutputDir ?? "").trim().isNotEmpty)
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final s = (_effectiveOutputDir ?? "").trim();
+                            if (s.isEmpty) return;
+                            await Clipboard.setData(ClipboardData(text: s));
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Path copied")),
+                            );
+                          },
+                          icon: const Icon(Icons.copy, size: 18),
+                          label: const Text("Copy"),
+                        ),
+                    ],
+                  ),
+                ],
+                if (_reportSettingsSection ==
+                    _ReportSettingsSection.prompts) ...[
+                  Text(
+                    "Prompts (advanced)",
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: RecorderTokens.space2),
+                  TextField(
+                    controller: _dailyPrompt,
+                    minLines: 6,
+                    maxLines: 12,
+                    decoration: const InputDecoration(
+                      labelText: "Daily prompt",
+                      hintText: "Must output Markdown only.",
+                    ),
+                    onChanged: (_) => _scheduleSave(),
+                  ),
+                  const SizedBox(height: RecorderTokens.space3),
+                  TextField(
+                    controller: _weeklyPrompt,
+                    minLines: 6,
+                    maxLines: 12,
+                    decoration: const InputDecoration(
+                      labelText: "Weekly prompt",
+                      hintText: "Must output Markdown only.",
+                    ),
+                    onChanged: (_) => _scheduleSave(),
+                  ),
+                  const SizedBox(height: RecorderTokens.space2),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        final d = _defaultDailyPrompt;
+                        final w = _defaultWeeklyPrompt;
+                        if (d == null || w == null) return;
+                        setState(() {
+                          _dailyPrompt.text = d;
+                          _weeklyPrompt.text = w;
+                        });
                         _scheduleSave(delay: const Duration(milliseconds: 200));
                       },
+                      icon: const Icon(Icons.restore, size: 18),
+                      label: const Text("Reset prompts to default"),
                     ),
-                    const SizedBox(height: RecorderTokens.space2),
-                    TextField(
-                      controller: _outputDir,
-                      decoration: const InputDecoration(
-                        labelText: "Output folder (optional)",
-                        hintText: "Leave empty for default",
-                      ),
-                      onChanged: (_) => _scheduleSave(),
-                    ),
-                    const SizedBox(height: RecorderTokens.space2),
-                    Row(
-                      children: [
-                        Icon(Icons.info_outline,
-                            size: 16, color: scheme.onSurfaceVariant),
-                        const SizedBox(width: RecorderTokens.space2),
-                        Expanded(
-                          child: Text(
-                            (_effectiveOutputDir ?? "").trim().isEmpty
-                                ? "Files are saved under Core data directory."
-                                : "Effective output: ${_effectiveOutputDir!.trim()}",
-                            style: Theme.of(context).textTheme.labelMedium,
-                          ),
-                        ),
-                        if ((_effectiveOutputDir ?? "").trim().isNotEmpty)
-                          OutlinedButton.icon(
-                            onPressed: () async {
-                              final s = (_effectiveOutputDir ?? "").trim();
-                              if (s.isEmpty) return;
-                              await Clipboard.setData(ClipboardData(text: s));
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text("Path copied")),
-                              );
-                            },
-                            icon: const Icon(Icons.copy, size: 18),
-                            label: const Text("Copy"),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: RecorderTokens.space2),
-                ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: EdgeInsets.zero,
-                  title: const Text("Prompts (advanced)"),
-                  subtitle:
-                      const Text("Customize the Markdown table templates."),
-                  children: [
-                    const SizedBox(height: RecorderTokens.space2),
-                    TextField(
-                      controller: _dailyPrompt,
-                      minLines: 6,
-                      maxLines: 12,
-                      decoration: const InputDecoration(
-                        labelText: "Daily prompt",
-                        hintText: "Must output Markdown only.",
-                      ),
-                      onChanged: (_) => _scheduleSave(),
-                    ),
-                    const SizedBox(height: RecorderTokens.space3),
-                    TextField(
-                      controller: _weeklyPrompt,
-                      minLines: 6,
-                      maxLines: 12,
-                      decoration: const InputDecoration(
-                        labelText: "Weekly prompt",
-                        hintText: "Must output Markdown only.",
-                      ),
-                      onChanged: (_) => _scheduleSave(),
-                    ),
-                    const SizedBox(height: RecorderTokens.space2),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          final d = _defaultDailyPrompt;
-                          final w = _defaultWeeklyPrompt;
-                          if (d == null || w == null) return;
-                          setState(() {
-                            _dailyPrompt.text = d;
-                            _weeklyPrompt.text = w;
-                          });
-                          _scheduleSave(
-                              delay: const Duration(milliseconds: 200));
-                        },
-                        icon: const Icon(Icons.restore, size: 18),
-                        label: const Text("Reset prompts to default"),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
                 const SizedBox(height: RecorderTokens.space2),
                 Row(
                   children: [
