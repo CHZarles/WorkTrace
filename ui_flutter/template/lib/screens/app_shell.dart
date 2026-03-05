@@ -32,7 +32,7 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WindowListener {
   static const _prefServerUrl = "serverUrl";
   static const _defaultServerUrl = "http://127.0.0.1:17600";
   static const _prefUpdateRepo = "updateGitHubRepo";
@@ -64,6 +64,8 @@ class _AppShellState extends State<AppShell> {
   bool _agentStartAttempted = false;
   StreamSubscription<String>? _externalSub;
   bool _updateCheckAttempted = false;
+  DateTime? _lastFocusRefreshAt;
+  bool _focusRefreshRunning = false;
 
   String _normalizeServerUrl(String input) {
     final trimmed = input.trim();
@@ -80,6 +82,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    windowManager.addListener(this);
     _loadPrefs();
     _externalSub = widget.externalCommands?.listen((msg) {
       _handleExternalCommand(msg);
@@ -90,9 +93,52 @@ class _AppShellState extends State<AppShell> {
   void dispose() {
     _trackingTimer?.cancel();
     _externalSub?.cancel();
+    windowManager.removeListener(this);
     TrayController.instance.dispose();
     _client.close();
     super.dispose();
+  }
+
+  Future<void> _refreshActivePageOnFocus() async {
+    if (!mounted) return;
+    if (_focusRefreshRunning) return;
+
+    final now = DateTime.now();
+    final last = _lastFocusRefreshAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 4)) {
+      return;
+    }
+
+    _focusRefreshRunning = true;
+    _lastFocusRefreshAt = now;
+    try {
+      await _refreshTracking();
+      switch (_index) {
+        case 0:
+          await _todayKey.currentState
+              ?.refresh(silent: true, triggerReminder: true);
+          break;
+        case 1:
+          await _searchKey.currentState?.refresh(silent: true);
+          break;
+        case 2:
+          await _plannerKey.currentState?.refresh(silent: true);
+          break;
+        case 3:
+          await _reportsKey.currentState?.refresh(silent: true);
+          break;
+        case 4:
+          await _settingsKey.currentState?.refresh();
+          break;
+      }
+    } finally {
+      _focusRefreshRunning = false;
+    }
+  }
+
+  @override
+  void onWindowFocus() {
+    unawaited(_refreshActivePageOnFocus());
   }
 
   Future<void> _showAndFocusWindow() async {
@@ -627,18 +673,18 @@ class _AppShellState extends State<AppShell> {
 
   String _trackingChipLabel(TrackingStatus? s) {
     if (s == null) return "采集…";
-    if (!s.paused) return "采集中";
+    if (!s.paused) return "采集";
 
     final until = s.pausedUntilTs;
     if (until == null || until.trim().isEmpty) return "已暂停";
     try {
       final t = DateTime.parse(until).toLocal();
       final diff = t.difference(DateTime.now());
-      if (diff.inSeconds <= 0) return "已暂停";
+      if (diff.inSeconds <= 0) return "暂停";
       final m = (diff.inSeconds / 60).ceil().clamp(1, 9999);
-      return "已暂停 ${m}m";
+      return "暂停 ${m}m";
     } catch (_) {
-      return "已暂停";
+      return "暂停";
     }
   }
 
@@ -649,7 +695,6 @@ class _AppShellState extends State<AppShell> {
     }
 
     final isWide = MediaQuery.of(context).size.width >= 720;
-    final titles = ["Today", "Review", "Planner", "Reports", "Settings"];
 
     final pages = [
       TodayScreen(
@@ -707,101 +752,237 @@ class _AppShellState extends State<AppShell> {
     final scheme = Theme.of(context).colorScheme;
     final paused = _tracking?.paused == true;
 
-    final actions = <Widget>[
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: ActionChip(
-          key: _tutorialTrackingKey,
-          label: Text(trackingLabel),
-          avatar: Icon(
-            paused ? Icons.pause_circle_filled : Icons.fiber_manual_record,
-            size: 16,
-            color: paused ? scheme.onSurfaceVariant : scheme.primary,
-          ),
-          onPressed: _openTrackingMenu,
-        ),
-      ),
-      IconButton(
-        onPressed: _tutorialRunning ? null : _openTutorial,
-        tooltip: "教程",
-        icon: const Icon(Icons.help_outline),
-      ),
-      if (_index == 0)
-        IconButton(
-          onPressed: () => _todayKey.currentState?.refresh(),
-          tooltip: "Refresh",
-          icon: const Icon(Icons.refresh),
-        ),
-      if (_index == 1)
-        IconButton(
-          onPressed: () => _searchKey.currentState?.refresh(),
-          tooltip: "Refresh",
-          icon: const Icon(Icons.refresh),
-        ),
-      if (_index == 2)
-        IconButton(
-          onPressed: () => _plannerKey.currentState?.refresh(),
-          tooltip: "Refresh",
-          icon: const Icon(Icons.refresh),
-        ),
-      if (_index == 3)
-        IconButton(
-          onPressed: () => _reportsKey.currentState?.refresh(),
-          tooltip: "Refresh",
-          icon: const Icon(Icons.refresh),
-        ),
-    ];
+    Widget toolbarIconButton({
+      required VoidCallback? onPressed,
+      required String tooltip,
+      required IconData icon,
+    }) {
+      return IconButton(
+        onPressed: onPressed,
+        tooltip: tooltip,
+        icon: Icon(icon, size: 18),
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      );
+    }
 
-    if (isWide) {
-      return Scaffold(
-        appBar: AppBar(title: Text(titles[_index]), actions: actions),
-        body: Row(
-          children: [
-            Container(
-              key: _tutorialNavRailKey,
-              child: NavigationRail(
-                selectedIndex: _index,
-                onDestinationSelected: _setIndex,
-                labelType: NavigationRailLabelType.all,
-                destinations: const [
-                  NavigationRailDestination(
-                    icon: Icon(Icons.today_outlined),
-                    selectedIcon: Icon(Icons.today),
-                    label: Text("Today"),
+    Widget trackingPill() {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Material(
+          key: _tutorialTrackingKey,
+          color: paused
+              ? scheme.surfaceContainerHighest
+              : scheme.primaryContainer.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(999),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: _openTrackingMenu,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    paused
+                        ? Icons.pause_circle_filled
+                        : Icons.fiber_manual_record,
+                    size: 12,
+                    color: paused ? scheme.onSurfaceVariant : scheme.primary,
                   ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.list_alt_outlined),
-                    selectedIcon: Icon(Icons.list_alt),
-                    label: Text("Review"),
+                  const SizedBox(width: 5),
+                  Text(
+                    trackingLabel,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.calendar_month_outlined),
-                    selectedIcon: Icon(Icons.calendar_month),
-                    label: Text("Planner"),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.article_outlined),
-                    selectedIcon: Icon(Icons.article),
-                    label: Text("Reports"),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.settings_outlined),
-                    selectedIcon: Icon(Icons.settings),
-                    label: Text("Settings"),
+                  const SizedBox(width: 1),
+                  Icon(
+                    Icons.keyboard_arrow_down,
+                    size: 14,
+                    color: scheme.onSurfaceVariant,
                   ),
                 ],
               ),
             ),
-            const VerticalDivider(width: 1),
-            Expanded(child: IndexedStack(index: _index, children: pages)),
-          ],
+          ),
+        ),
+      );
+    }
+
+    Widget railFooterButton({
+      Key? key,
+      required String label,
+      required IconData icon,
+      required VoidCallback? onPressed,
+      Color? foreground,
+      Color? background,
+      String? tooltip,
+    }) {
+      final fg = foreground ?? scheme.onSurfaceVariant;
+      final bg = background ?? scheme.surfaceContainerLowest;
+      return SizedBox(
+        width: 86,
+        child: Material(
+          key: key,
+          color: bg,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            onTap: onPressed,
+            borderRadius: BorderRadius.circular(10),
+            child: Tooltip(
+              message: tooltip ?? label,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: 15, color: fg),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: fg,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final topToolsBarCompact = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        border: Border(
+          bottom: BorderSide(color: scheme.outline.withValues(alpha: 0.08)),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Spacer(),
+          trackingPill(),
+          toolbarIconButton(
+            onPressed: _tutorialRunning ? null : _openTutorial,
+            tooltip: "教程",
+            icon: Icons.help_outline,
+          ),
+        ],
+      ),
+    );
+
+    if (isWide) {
+      return Scaffold(
+        body: SafeArea(
+          child: Row(
+            children: [
+              Container(
+                key: _tutorialNavRailKey,
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: NavigationRail(
+                        selectedIndex: _index,
+                        onDestinationSelected: _setIndex,
+                        labelType: NavigationRailLabelType.all,
+                        destinations: const [
+                          NavigationRailDestination(
+                            icon: Icon(Icons.today_outlined),
+                            selectedIcon: Icon(Icons.today),
+                            label: Text("Today"),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.list_alt_outlined),
+                            selectedIcon: Icon(Icons.list_alt),
+                            label: Text("Review"),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.calendar_month_outlined),
+                            selectedIcon: Icon(Icons.calendar_month),
+                            label: Text("Planner"),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.article_outlined),
+                            selectedIcon: Icon(Icons.article),
+                            label: Text("Reports"),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.settings_outlined),
+                            selectedIcon: Icon(Icons.settings),
+                            label: Text("Settings"),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Column(
+                        children: [
+                          railFooterButton(
+                            key: _tutorialTrackingKey,
+                            label: paused ? "暂停" : "采集",
+                            icon: paused
+                                ? Icons.pause_circle_filled
+                                : Icons.fiber_manual_record,
+                            foreground: paused
+                                ? scheme.onSurfaceVariant
+                                : scheme.primary,
+                            background: paused
+                                ? scheme.surfaceContainerHighest
+                                : scheme.primaryContainer
+                                    .withValues(alpha: 0.65),
+                            onPressed: _openTrackingMenu,
+                            tooltip: trackingLabel,
+                          ),
+                          const SizedBox(height: 6),
+                          railFooterButton(
+                            label: "教程",
+                            icon: Icons.help_outline,
+                            onPressed: _tutorialRunning ? null : _openTutorial,
+                            tooltip: "教程",
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: Column(
+                  children: [
+                    Expanded(
+                        child: IndexedStack(index: _index, children: pages)),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(titles[_index]), actions: actions),
-      body: IndexedStack(index: _index, children: pages),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            topToolsBarCompact,
+            Expanded(child: IndexedStack(index: _index, children: pages)),
+          ],
+        ),
+      ),
       bottomNavigationBar: NavigationBar(
         key: _tutorialBottomNavKey,
         selectedIndex: _index,

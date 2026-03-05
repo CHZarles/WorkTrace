@@ -106,6 +106,10 @@ class SettingsScreenState extends State<SettingsScreen> {
   bool _updateAvailable = false;
   Timer? _updateRepoSaveDebounce;
 
+  Future<void> refresh() async {
+    await _refreshAll();
+  }
+
   @override
   void initState() {
     super.initState();

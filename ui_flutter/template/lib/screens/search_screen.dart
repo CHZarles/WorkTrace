@@ -36,6 +36,7 @@ class SearchScreenState extends State<SearchScreen> {
   bool _refreshing = false;
   Completer<void>? _loadCompleter;
   String? _error;
+  DateTime? _lastRefreshedAt;
   DateTime _day = DateTime.now();
   List<BlockSummary> _blocks = const [];
   final Map<String, List<BlockCardItem>> _previewFocusByBlockId = {};
@@ -203,6 +204,7 @@ class SearchScreenState extends State<SearchScreen> {
           _batchMode = false;
         }
         _error = null;
+        _lastRefreshedAt = DateTime.now();
       });
       _autoRetryAttempts = 0;
     } catch (e) {
@@ -218,6 +220,15 @@ class SearchScreenState extends State<SearchScreen> {
       _loadCompleter?.complete();
       _loadCompleter = null;
     }
+  }
+
+  String _updatedAgoText(DateTime? t) {
+    if (t == null) return "";
+    final d = DateTime.now().difference(t);
+    if (d.inSeconds < 60) return "已更新 ${d.inSeconds}s 前";
+    if (d.inMinutes < 60) return "已更新 ${d.inMinutes}m 前";
+    if (d.inHours < 24) return "已更新 ${d.inHours}h 前";
+    return "已更新 ${d.inDays}d 前";
   }
 
   bool _isTransientError(String msg) {
@@ -680,10 +691,10 @@ class SearchScreenState extends State<SearchScreen> {
       label: Text(date),
     );
 
-    final meta = Text(
-      "$results / $total blocks",
-      style: Theme.of(context).textTheme.labelMedium,
-    );
+    final metaText = _lastRefreshedAt == null
+        ? "$results / $total blocks"
+        : "$results / $total blocks · ${_updatedAgoText(_lastRefreshedAt)}";
+    final meta = Text(metaText, style: Theme.of(context).textTheme.labelMedium);
 
     final filter = SingleChildScrollView(
       scrollDirection: Axis.horizontal,
