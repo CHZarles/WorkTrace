@@ -95,6 +95,19 @@ class RecorderTheme {
         indicatorColor: RecorderLightColors.accentContainer,
         selectedIconTheme: IconThemeData(color: RecorderLightColors.accent1),
       ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: RecorderLightColors.bg1,
+        foregroundColor: RecorderLightColors.text0,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: TextStyle(
+          fontSize: 18,
+          height: 24 / 18,
+          fontWeight: FontWeight.w600,
+          color: RecorderLightColors.text0,
+        ),
+      ),
       tooltipTheme: TooltipThemeData(
         excludeFromSemantics: defaultTargetPlatform == TargetPlatform.windows,
       ),
@@ -191,6 +204,19 @@ class RecorderTheme {
       navigationRailTheme: NavigationRailThemeData(
         indicatorColor: RecorderDarkColors.accentContainer,
         selectedIconTheme: IconThemeData(color: RecorderDarkColors.accent0),
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: RecorderDarkColors.bg1,
+        foregroundColor: RecorderDarkColors.text0,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: TextStyle(
+          fontSize: 18,
+          height: 24 / 18,
+          fontWeight: FontWeight.w600,
+          color: RecorderDarkColors.text0,
+        ),
       ),
       tooltipTheme: TooltipThemeData(
         excludeFromSemantics: defaultTargetPlatform == TargetPlatform.windows,

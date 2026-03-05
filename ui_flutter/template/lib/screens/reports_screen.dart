@@ -85,6 +85,7 @@ class ReportsScreen extends StatefulWidget {
 class ReportsScreenState extends State<ReportsScreen> {
   bool _loading = false;
   String? _error;
+  DateTime? _lastRefreshedAt;
   List<ReportSummary> _reports = const [];
 
   ReportSettings? _settings;
@@ -407,6 +408,7 @@ class ReportsScreenState extends State<ReportsScreen> {
         _todos = todos;
         _applySettingsToState(settings);
         _error = null;
+        _lastRefreshedAt = DateTime.now();
       });
       _applySettingsToControllers(settings);
       _compactReminderFiredKeys();
@@ -433,6 +435,15 @@ class ReportsScreenState extends State<ReportsScreen> {
         s.contains("http_503") ||
         s.contains("http_504")) return true;
     return false;
+  }
+
+  String _updatedAgoText(DateTime? t) {
+    if (t == null) return "";
+    final d = DateTime.now().difference(t);
+    if (d.inSeconds < 60) return "已更新 ${d.inSeconds}s 前";
+    if (d.inMinutes < 60) return "已更新 ${d.inMinutes}m 前";
+    if (d.inHours < 24) return "已更新 ${d.inHours}h 前";
+    return "已更新 ${d.inDays}d 前";
   }
 
   void _scheduleAutoRetryIfNeeded(String msg) {
@@ -1564,17 +1575,32 @@ class ReportsScreenState extends State<ReportsScreen> {
     final mm = (startMinute % 60).toString().padLeft(2, "0");
     final dueDay = _todoDay(todo);
     final reminderLocal = _todoReminderLocal(todo);
-    final subtitle =
+    final scheduleLabel =
         hasSchedule ? "$hh:$mm · ${_todoDurationMinutes(todo)}m" : "No time";
     final overdue = _todoIsOverdue(todo);
     final isToday = _todoIsToday(todo);
+
+    Future<void> onAction(String action) async {
+      switch (action) {
+        case "edit":
+          await _openTodoEditor(todo: todo);
+          break;
+        case "toggle":
+          await _toggleTodo(todo, !todo.done);
+          break;
+        case "delete":
+          await _deleteTodo(todo);
+          break;
+      }
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: todo.done
             ? scheme.surfaceContainerHighest
-            : scheme.primaryContainer.withValues(alpha: 0.85),
+            : scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: overdue
@@ -1586,14 +1612,14 @@ class ReportsScreenState extends State<ReportsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(top: 3, right: 8),
+            padding: const EdgeInsets.only(top: 4, right: 10),
             child: Icon(
               todo.done
                   ? Icons.check_circle_outline
                   : overdue
                       ? Icons.warning_amber_rounded
                       : Icons.radio_button_unchecked,
-              size: 16,
+              size: 18,
               color: overdue ? scheme.error : scheme.onSurfaceVariant,
             ),
           ),
@@ -1603,17 +1629,18 @@ class ReportsScreenState extends State<ReportsScreen> {
               children: [
                 Text(
                   todo.content,
-                  maxLines: 3,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
                         decoration: todo.done
                             ? TextDecoration.lineThrough
                             : TextDecoration.none,
                       ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Text(
-                  subtitle,
+                  hasSchedule ? "Scheduled · $scheduleLabel" : "Unscheduled",
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -1623,20 +1650,34 @@ class ReportsScreenState extends State<ReportsScreen> {
                   spacing: 6,
                   runSpacing: 4,
                   children: [
-                    if (isToday)
-                      _todoMetaPill(context, icon: Icons.today, label: "Today"),
                     _todoMetaPill(
                       context,
                       icon: Icons.calendar_today_outlined,
                       label: _dateLocal(dueDay),
                     ),
+                    if (isToday)
+                      _todoMetaPill(
+                        context,
+                        icon: Icons.today,
+                        label: "Today",
+                        bgColor:
+                            scheme.primaryContainer.withValues(alpha: 0.70),
+                        fgColor: scheme.primary,
+                        borderColor: scheme.primary.withValues(alpha: 0.24),
+                      ),
                     _todoMetaPill(
                       context,
-                      icon: Icons.alarm_outlined,
-                      label: reminderLocal == null
-                          ? "No reminder"
-                          : _todoReminderLabel(todo),
+                      icon: hasSchedule
+                          ? Icons.schedule_outlined
+                          : Icons.pending_actions_outlined,
+                      label: hasSchedule ? scheduleLabel : "No time",
                     ),
+                    if (reminderLocal != null)
+                      _todoMetaPill(
+                        context,
+                        icon: Icons.alarm_outlined,
+                        label: _todoReminderLabel(todo),
+                      ),
                     if (overdue)
                       _todoMetaPill(
                         context,
@@ -1649,45 +1690,60 @@ class ReportsScreenState extends State<ReportsScreen> {
               ],
             ),
           ),
-          const SizedBox(width: 6),
-          SizedBox(
-            width: 30,
-            child: Column(
-              children: [
-                IconButton(
-                  tooltip: "Edit",
-                  onPressed:
-                      _todoBusy ? null : () => _openTodoEditor(todo: todo),
-                  icon: const Icon(Icons.edit_outlined, size: 16),
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                  constraints:
-                      const BoxConstraints(minWidth: 24, minHeight: 24),
+          const SizedBox(width: 8),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: todo.done ? "Mark open" : "Mark done",
+                onPressed: _todoBusy ? null : () => onAction("toggle"),
+                icon: Icon(
+                  todo.done ? Icons.check_circle : Icons.check_circle_outline,
+                  size: 20,
                 ),
-                IconButton(
-                  tooltip: todo.done ? "Mark open" : "Mark done",
-                  onPressed:
-                      _todoBusy ? null : () => _toggleTodo(todo, !todo.done),
-                  icon: Icon(
-                    todo.done ? Icons.check_circle : Icons.check_circle_outline,
-                    size: 17,
+                visualDensity: VisualDensity.compact,
+              ),
+              PopupMenuButton<String>(
+                tooltip: "More",
+                onSelected: _todoBusy ? null : onAction,
+                itemBuilder: (context) => [
+                  const PopupMenuItem<String>(
+                    value: "edit",
+                    child: ListTile(
+                      dense: true,
+                      leading: Icon(Icons.edit_outlined, size: 18),
+                      title: Text("Edit"),
+                    ),
                   ),
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                  constraints:
-                      const BoxConstraints(minWidth: 24, minHeight: 24),
+                  PopupMenuItem<String>(
+                    value: "toggle",
+                    child: ListTile(
+                      dense: true,
+                      leading: Icon(
+                        todo.done
+                            ? Icons.check_circle_outline
+                            : Icons.radio_button_unchecked,
+                        size: 18,
+                      ),
+                      title: Text(todo.done ? "Mark open" : "Mark done"),
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem<String>(
+                    value: "delete",
+                    child: ListTile(
+                      dense: true,
+                      leading: Icon(Icons.delete_outline, size: 18),
+                      title: Text("Delete"),
+                    ),
+                  ),
+                ],
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(Icons.more_horiz, size: 18),
                 ),
-                IconButton(
-                  tooltip: "Delete",
-                  onPressed: _todoBusy ? null : () => _deleteTodo(todo),
-                  icon: const Icon(Icons.delete_outline, size: 16),
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                  constraints:
-                      const BoxConstraints(minWidth: 24, minHeight: 24),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1699,37 +1755,37 @@ class ReportsScreenState extends State<ReportsScreen> {
     required IconData icon,
     required String label,
     bool isWarning = false,
+    Color? bgColor,
+    Color? fgColor,
+    Color? borderColor,
   }) {
     final scheme = Theme.of(context).colorScheme;
+    final resolvedBg = bgColor ??
+        (isWarning
+            ? scheme.errorContainer.withValues(alpha: 0.72)
+            : scheme.surface.withValues(alpha: 0.85));
+    final resolvedFg = fgColor ??
+        (isWarning ? scheme.onErrorContainer : scheme.onSurfaceVariant);
+    final resolvedBorder = borderColor ??
+        (isWarning
+            ? scheme.error.withValues(alpha: 0.35)
+            : scheme.outline.withValues(alpha: 0.15));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: isWarning
-            ? scheme.errorContainer.withValues(alpha: 0.72)
-            : scheme.surface.withValues(alpha: 0.85),
+        color: resolvedBg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: isWarning
-              ? scheme.error.withValues(alpha: 0.35)
-              : scheme.outline.withValues(alpha: 0.15),
-        ),
+        border: Border.all(color: resolvedBorder),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 12,
-            color:
-                isWarning ? scheme.onErrorContainer : scheme.onSurfaceVariant,
-          ),
+          Icon(icon, size: 12, color: resolvedFg),
           const SizedBox(width: 4),
           Text(
             label,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: isWarning
-                      ? scheme.onErrorContainer
-                      : scheme.onSurfaceVariant,
+                  color: resolvedFg,
                 ),
           ),
         ],
@@ -2412,63 +2468,61 @@ class ReportsScreenState extends State<ReportsScreen> {
 
   Widget _todoSectionCard(
     BuildContext context, {
-    required IconData icon,
     required String title,
-    required String subtitle,
     required List<ReportTodo> todos,
-    Color? tint,
+    Color? accent,
     bool initiallyExpanded = true,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    final sectionTint = tint ?? scheme.primary;
+    final sectionAccent = accent ?? scheme.primary;
     return Container(
       margin: const EdgeInsets.only(bottom: RecorderTokens.space2),
-      padding: const EdgeInsets.all(RecorderTokens.space2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: RecorderTokens.space2,
+        vertical: RecorderTokens.space1,
+      ),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           tilePadding: const EdgeInsets.symmetric(
             horizontal: RecorderTokens.space2,
-            vertical: 2,
+            vertical: 0,
           ),
           childrenPadding:
               const EdgeInsets.symmetric(horizontal: RecorderTokens.space2),
           initiallyExpanded: initiallyExpanded,
-          title: Row(
-            children: [
-              Icon(icon, size: 16, color: sectionTint),
-              const SizedBox(width: 6),
-              Expanded(
-                child:
-                    Text(title, style: Theme.of(context).textTheme.labelLarge),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: sectionTint.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(999),
+          title: Text(
+            title,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: sectionAccent,
+                  fontWeight: FontWeight.w600,
                 ),
-                child: Text(
-                  "${todos.length}",
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: sectionTint,
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ),
-            ],
           ),
-          subtitle: Text(
-            subtitle,
-            style: Theme.of(context)
-                .textTheme
-                .labelSmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                "${todos.length}",
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.expand_more, size: 18),
+            ],
           ),
           children: [
             const SizedBox(height: 4),
@@ -2498,68 +2552,88 @@ class ReportsScreenState extends State<ReportsScreen> {
     final hasQuery = _todoSearch.text.trim().isNotEmpty;
     final noResult =
         open.isEmpty && done.isEmpty && (_todos.isNotEmpty || hasQuery);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: RecorderTokens.space2,
-          runSpacing: RecorderTokens.space2,
-          children: [
-            FilledButton.icon(
-              onPressed: _todoBusy ? null : () => _openTodoEditor(),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text("Quick add"),
-            ),
-            const SizedBox(width: RecorderTokens.space2),
-            OutlinedButton.icon(
-              onPressed: _todoBusy
-                  ? null
-                  : () => _openTodoEditor(
-                        suggestedDay: _normalizeDay(DateTime.now()),
-                        suggestedStartMinute: 9 * 60,
-                        forceSchedule: true,
-                      ),
-              icon: const Icon(Icons.schedule_outlined, size: 18),
-              label: const Text("Scheduled TODO"),
-            ),
-            SizedBox(
-              width: 220,
-              child: DropdownButtonFormField<_TodoListSort>(
-                initialValue: _todoListSort,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  labelText: "Sort",
-                ),
-                items: [
-                  for (final sort in _TodoListSort.values)
-                    DropdownMenuItem(
-                      value: sort,
-                      child: Text(_todoListSortLabel(sort)),
-                    ),
-                ],
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() => _todoListSort = value);
-                },
+
+    final searchField = TextField(
+      controller: _todoSearch,
+      onChanged: (_) => setState(() {}),
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.search),
+        hintText: "Search TODO / date",
+        suffixIcon: _todoSearch.text.trim().isEmpty
+            ? null
+            : IconButton(
+                tooltip: "Clear",
+                onPressed: () => setState(() => _todoSearch.clear()),
+                icon: const Icon(Icons.close),
               ),
+      ),
+    );
+
+    final sortMenu = PopupMenuButton<_TodoListSort>(
+      initialValue: _todoListSort,
+      tooltip: "Sort",
+      onSelected: (value) => setState(() => _todoListSort = value),
+      itemBuilder: (context) => [
+        for (final sort in _TodoListSort.values)
+          PopupMenuItem<_TodoListSort>(
+            value: sort,
+            child: Row(
+              children: [
+                if (_todoListSort == sort)
+                  Icon(Icons.check, size: 16, color: scheme.primary)
+                else
+                  const SizedBox(width: 16),
+                const SizedBox(width: 8),
+                Text(_todoListSortLabel(sort)),
+              ],
+            ),
+          ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: scheme.outline.withValues(alpha: 0.18)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.sort, size: 16),
+            const SizedBox(width: 6),
+            Text(
+              _todoListSortLabel(_todoListSort),
+              style: Theme.of(context).textTheme.labelMedium,
             ),
           ],
         ),
-        const SizedBox(height: RecorderTokens.space2),
-        TextField(
-          controller: _todoSearch,
-          onChanged: (_) => setState(() {}),
-          decoration: InputDecoration(
-            prefixIcon: const Icon(Icons.search),
-            hintText: "Search TODO / date",
-            suffixIcon: _todoSearch.text.trim().isEmpty
-                ? null
-                : IconButton(
-                    tooltip: "Clear",
-                    onPressed: () => setState(() => _todoSearch.clear()),
-                    icon: const Icon(Icons.close),
-                  ),
-          ),
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 680) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  searchField,
+                  const SizedBox(height: RecorderTokens.space2),
+                  Align(alignment: Alignment.centerRight, child: sortMenu),
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: searchField),
+                const SizedBox(width: RecorderTokens.space2),
+                sortMenu,
+              ],
+            );
+          },
         ),
         const SizedBox(height: RecorderTokens.space2),
         Wrap(
@@ -2577,7 +2651,7 @@ class ReportsScreenState extends State<ReportsScreen> {
         const SizedBox(height: RecorderTokens.space2),
         if (_todos.isEmpty)
           Text(
-            "No TODO yet. Add plain tasks or tasks with date/time + reminder.",
+            "No TODO yet. Use New TODO in the header.",
             style: Theme.of(context)
                 .textTheme
                 .labelMedium
@@ -2595,64 +2669,42 @@ class ReportsScreenState extends State<ReportsScreen> {
           if (overdue.isNotEmpty)
             _todoSectionCard(
               context,
-              icon: Icons.warning_amber_rounded,
               title: "Overdue",
-              subtitle: "Fix these first to recover execution reliability.",
               todos: overdue,
-              tint: scheme.error,
+              accent: scheme.error,
               initiallyExpanded: true,
             ),
           if (today.isNotEmpty)
             _todoSectionCard(
               context,
-              icon: Icons.today_outlined,
               title: "Today",
-              subtitle: "Current focus lane.",
               todos: today,
-              tint: scheme.primary,
-              initiallyExpanded: true,
+              accent: scheme.primary,
+              initiallyExpanded: overdue.isEmpty,
             ),
           if (scheduled.isNotEmpty)
             _todoSectionCard(
               context,
-              icon: Icons.schedule_outlined,
               title: "Upcoming scheduled",
-              subtitle: "Calendar-anchored tasks with defined time blocks.",
               todos: scheduled,
-              tint: scheme.secondary,
+              accent: scheme.secondary,
               initiallyExpanded: false,
             ),
           if (backlog.isNotEmpty)
             _todoSectionCard(
               context,
-              icon: Icons.inventory_2_outlined,
               title: "Backlog (no schedule)",
-              subtitle: "Plan these into calendar when ready.",
               todos: backlog,
-              tint: scheme.tertiary,
+              accent: scheme.tertiary,
               initiallyExpanded: false,
             ),
           if (done.isNotEmpty) ...[
-            ExpansionTile(
-              tilePadding: const EdgeInsets.symmetric(horizontal: 4),
-              title: Text(
-                "Done (${done.length})",
-                style: Theme.of(context)
-                    .textTheme
-                    .labelLarge
-                    ?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-              subtitle: Text(
-                "Collapsed by default (Todoist style) to keep focus on open work.",
-                style: Theme.of(context)
-                    .textTheme
-                    .labelSmall
-                    ?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-              children: [
-                const SizedBox(height: 2),
-                for (final todo in done.take(30)) _todoChip(context, todo),
-              ],
+            _todoSectionCard(
+              context,
+              title: "Done",
+              todos: done.take(30).toList(),
+              accent: scheme.onSurfaceVariant,
+              initiallyExpanded: false,
             ),
           ],
         ],
@@ -2670,6 +2722,23 @@ class ReportsScreenState extends State<ReportsScreen> {
     final weekViewportHeight = _weekCalendarScale == _WeekCalendarScale.fullDay
         ? weekContentHeight + 16
         : targetViewport;
+
+    Widget hintItem(IconData icon, String text, {Color? tint}) {
+      final color = tint ?? scheme.onSurfaceVariant;
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style:
+                Theme.of(context).textTheme.labelSmall?.copyWith(color: color),
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2697,39 +2766,21 @@ class ReportsScreenState extends State<ReportsScreen> {
                 }),
               ),
             ),
-            const SizedBox(width: RecorderTokens.space2),
-            FilledButton.icon(
-              onPressed: _todoBusy ? null : () => _openTodoEditor(),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text("Add"),
-            ),
           ],
         ),
-        const SizedBox(height: RecorderTokens.space2),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(
-            horizontal: RecorderTokens.space2,
-            vertical: RecorderTokens.space1,
-          ),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.insights_outlined, size: 15, color: scheme.primary),
-              const SizedBox(width: 6),
-              Text(
-                _todoRangeLoadText(),
-                style: Theme.of(context)
-                    .textTheme
-                    .labelMedium
-                    ?.copyWith(color: scheme.onSurfaceVariant),
+        const SizedBox(height: RecorderTokens.space1),
+        Wrap(
+          spacing: 10,
+          runSpacing: 6,
+          children: [
+            hintItem(Icons.insights_outlined, _todoRangeLoadText(),
+                tint: scheme.primary),
+            if (_todoCalendarView == _TodoCalendarView.week)
+              hintItem(
+                Icons.open_with,
+                "Tap empty grid to create · drag block to reschedule",
               ),
-            ],
-          ),
+          ],
         ),
         if (_todoCalendarView == _TodoCalendarView.week) ...[
           const SizedBox(height: 6),
@@ -2744,26 +2795,6 @@ class ReportsScreenState extends State<ReportsScreen> {
                   onSelected: (_) => setState(() => _weekCalendarScale = scale),
                 ),
             ],
-          ),
-          const SizedBox(height: 6),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(
-              horizontal: RecorderTokens.space2,
-              vertical: RecorderTokens.space1,
-            ),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
-            ),
-            child: Text(
-              "24h fit: full day in one screen · tap empty grid to create · drag block to reschedule (15m snap)",
-              style: Theme.of(context)
-                  .textTheme
-                  .labelSmall
-                  ?.copyWith(color: scheme.onSurfaceVariant),
-            ),
           ),
         ],
         const SizedBox(height: RecorderTokens.space2),
@@ -2825,6 +2856,55 @@ class ReportsScreenState extends State<ReportsScreen> {
     final mainPanel = _plannerDimension == _PlannerDimension.todo
         ? _todoListDimension(context)
         : _todoCalendarDimension(context);
+    final modeTitle = _plannerDimension == _PlannerDimension.todo
+        ? "TODO Focus"
+        : "Calendar Planning";
+    final modeHint = _plannerDimension == _PlannerDimension.todo
+        ? "Capture tasks, prioritize, and complete quickly."
+        : "Plan weekly/monthly schedule and drag to reschedule.";
+    final modeIcon = _plannerDimension == _PlannerDimension.todo
+        ? Icons.checklist_outlined
+        : Icons.calendar_month_outlined;
+
+    Widget plannerActions({required bool compact}) {
+      final insightsChip = FilterChip(
+        selected: _plannerShowInsights,
+        onSelected: (_) =>
+            setState(() => _plannerShowInsights = !_plannerShowInsights),
+        avatar: Icon(
+          _plannerShowInsights
+              ? Icons.view_sidebar_outlined
+              : Icons.view_sidebar,
+          size: 16,
+          color:
+              _plannerShowInsights ? scheme.primary : scheme.onSurfaceVariant,
+        ),
+        label: Text(_plannerShowInsights ? "Insights on" : "Insights"),
+      );
+
+      final newTodoButton = FilledButton.icon(
+        onPressed: _todoBusy ? null : () => _openTodoEditor(),
+        icon: const Icon(Icons.add, size: 18),
+        label: const Text("New TODO"),
+      );
+
+      if (compact) {
+        return Wrap(
+          spacing: RecorderTokens.space2,
+          runSpacing: RecorderTokens.space2,
+          children: [newTodoButton, insightsChip],
+        );
+      }
+
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          insightsChip,
+          const SizedBox(width: RecorderTokens.space2),
+          newTodoButton,
+        ],
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2839,34 +2919,22 @@ class ReportsScreenState extends State<ReportsScreen> {
                       style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 4),
                   Text(
-                    "Manage TODO and calendar in one place.",
+                    "Planner：安排待办与时间块（执行视图）",
                     style: Theme.of(context)
                         .textTheme
                         .labelMedium
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
+                  if (_lastRefreshedAt != null)
+                    Text(
+                      _updatedAgoText(_lastRefreshedAt),
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
                   const SizedBox(height: RecorderTokens.space2),
-                  Wrap(
-                    spacing: RecorderTokens.space2,
-                    runSpacing: RecorderTokens.space2,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: () => setState(
-                            () => _plannerShowInsights = !_plannerShowInsights),
-                        icon: Icon(_plannerShowInsights
-                            ? Icons.view_sidebar_outlined
-                            : Icons.view_sidebar),
-                        label: Text(_plannerShowInsights
-                            ? "Hide insights"
-                            : "Insights"),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: _todoBusy ? null : () => _openTodoEditor(),
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text("New TODO"),
-                      ),
-                    ],
-                  ),
+                  plannerActions(compact: true),
                 ],
               );
             }
@@ -2880,54 +2948,90 @@ class ReportsScreenState extends State<ReportsScreen> {
                           style: Theme.of(context).textTheme.titleLarge),
                       const SizedBox(height: 2),
                       Text(
-                        "Manage TODO and calendar in one place.",
+                        "Planner：安排待办与时间块（执行视图）",
                         style: Theme.of(context)
                             .textTheme
                             .labelMedium
                             ?.copyWith(color: scheme.onSurfaceVariant),
                       ),
+                      if (_lastRefreshedAt != null)
+                        Text(
+                          _updatedAgoText(_lastRefreshedAt),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
                     ],
                   ),
                 ),
-                OutlinedButton.icon(
-                  onPressed: () => setState(
-                      () => _plannerShowInsights = !_plannerShowInsights),
-                  icon: Icon(_plannerShowInsights
-                      ? Icons.view_sidebar_outlined
-                      : Icons.view_sidebar),
-                  label:
-                      Text(_plannerShowInsights ? "Hide insights" : "Insights"),
-                ),
-                const SizedBox(width: RecorderTokens.space2),
-                FilledButton.tonalIcon(
-                  onPressed: _todoBusy ? null : () => _openTodoEditor(),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text("New TODO"),
-                ),
+                plannerActions(compact: false),
               ],
             );
           },
         ),
         const SizedBox(height: RecorderTokens.space2),
-        _plannerCompactStats(context),
-        const SizedBox(height: RecorderTokens.space2),
-        SegmentedButton<_PlannerDimension>(
-          segments: const [
-            ButtonSegment(
-              value: _PlannerDimension.todo,
-              icon: Icon(Icons.checklist_outlined),
-              label: Text("TODO"),
-            ),
-            ButtonSegment(
-              value: _PlannerDimension.calendar,
-              icon: Icon(Icons.calendar_month_outlined),
-              label: Text("Calendar"),
-            ),
-          ],
-          selected: {_plannerDimension},
-          showSelectedIcon: false,
-          onSelectionChanged: (s) =>
-              setState(() => _plannerDimension = s.first),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(RecorderTokens.space3),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(modeIcon, size: 16, color: scheme.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      modeTitle,
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                  ),
+                  Text(
+                    "Mode",
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                modeHint,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: RecorderTokens.space2),
+              SegmentedButton<_PlannerDimension>(
+                segments: const [
+                  ButtonSegment(
+                    value: _PlannerDimension.todo,
+                    icon: Icon(Icons.checklist_outlined),
+                    label: Text("TODO"),
+                  ),
+                  ButtonSegment(
+                    value: _PlannerDimension.calendar,
+                    icon: Icon(Icons.calendar_month_outlined),
+                    label: Text("Calendar"),
+                  ),
+                ],
+                selected: {_plannerDimension},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) =>
+                    setState(() => _plannerDimension = s.first),
+              ),
+              const SizedBox(height: RecorderTokens.space2),
+              _plannerCompactStats(context),
+            ],
+          ),
         ),
         const SizedBox(height: RecorderTokens.space2),
         LayoutBuilder(
@@ -3026,8 +3130,29 @@ class ReportsScreenState extends State<ReportsScreen> {
             Row(
               children: [
                 Expanded(
-                    child: Text("Reports",
-                        style: Theme.of(context).textTheme.titleMedium)),
+                    child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("Reports",
+                        style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 2),
+                    Text(
+                      "Reports：复盘总结与策略建议（洞察视图）",
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                    if (_lastRefreshedAt != null)
+                      Text(
+                        _updatedAgoText(_lastRefreshedAt),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                  ],
+                )),
                 if (widget.onOpenSettings != null)
                   TextButton.icon(
                     onPressed: widget.onOpenSettings,
