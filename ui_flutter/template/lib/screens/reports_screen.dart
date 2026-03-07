@@ -21,8 +21,6 @@ enum _TodoListFilter { all, today, scheduled, reminder, done }
 
 enum _TodoListSort { smart, dueSoon, updated }
 
-enum _WeekCalendarScale { fullDay, standard, detail }
-
 enum _ReportSettingsSection {
   connection,
   automation,
@@ -99,7 +97,6 @@ class ReportsScreenState extends State<ReportsScreen> {
   _TodoCalendarView _todoCalendarView = _TodoCalendarView.week;
   _TodoListFilter _todoListFilter = _TodoListFilter.all;
   _TodoListSort _todoListSort = _TodoListSort.smart;
-  _WeekCalendarScale _weekCalendarScale = _WeekCalendarScale.fullDay;
   _ReportSettingsSection _reportSettingsSection =
       _ReportSettingsSection.connection;
   _ReportSettingsLayer _reportSettingsLayer = _ReportSettingsLayer.basic;
@@ -768,26 +765,11 @@ class ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  String _weekCalendarScaleLabel(_WeekCalendarScale scale) {
-    switch (scale) {
-      case _WeekCalendarScale.fullDay:
-        return "24h fit";
-      case _WeekCalendarScale.standard:
-        return "Standard";
-      case _WeekCalendarScale.detail:
-        return "Detail";
-    }
-  }
-
-  double _weekCalendarHourHeight() {
-    switch (_weekCalendarScale) {
-      case _WeekCalendarScale.fullDay:
-        return 24.0;
-      case _WeekCalendarScale.standard:
-        return 36.0;
-      case _WeekCalendarScale.detail:
-        return 52.0;
-    }
+  double _weekCalendarHourHeight(BuildContext context) {
+    final viewport = (MediaQuery.of(context).size.height * 0.66)
+        .clamp(560.0, 760.0)
+        .toDouble();
+    return ((viewport - 38) / 24).clamp(24.0, 30.0).toDouble();
   }
 
   String _reportSettingsSectionLabel(_ReportSettingsSection section) {
@@ -2714,127 +2696,106 @@ class ReportsScreenState extends State<ReportsScreen> {
 
   Widget _todoCalendarDimension(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final hourHeight = _weekCalendarHourHeight();
-    final weekContentHeight = (38 + 24 * hourHeight).toDouble();
-    final targetViewport = (MediaQuery.of(context).size.height * 0.78)
-        .clamp(520.0, 980.0)
-        .toDouble();
-    final weekViewportHeight = _weekCalendarScale == _WeekCalendarScale.fullDay
-        ? weekContentHeight + 16
-        : targetViewport;
-
-    Widget hintItem(IconData icon, String text, {Color? tint}) {
-      final color = tint ?? scheme.onSurfaceVariant;
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 4),
-          Text(
-            text,
-            style:
-                Theme.of(context).textTheme.labelSmall?.copyWith(color: color),
-          ),
-        ],
-      );
-    }
+    final hourHeight = _weekCalendarHourHeight(context);
+    final weekViewportHeight = 38 + 24 * hourHeight + 16;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: SegmentedButton<_TodoCalendarView>(
-                segments: const [
-                  ButtonSegment(
-                      value: _TodoCalendarView.week, label: Text("Week")),
-                  ButtonSegment(
-                      value: _TodoCalendarView.month, label: Text("Month")),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 820;
+            final calendarModeSwitch = SegmentedButton<_TodoCalendarView>(
+              segments: const [
+                ButtonSegment(
+                    value: _TodoCalendarView.week, label: Text("Week")),
+                ButtonSegment(
+                    value: _TodoCalendarView.month, label: Text("Month")),
+              ],
+              selected: {_todoCalendarView},
+              showSelectedIcon: false,
+              onSelectionChanged: (s) => setState(() {
+                _dragTodoId = null;
+                _dragOriginDayIndex = null;
+                _dragOriginStartMinute = null;
+                _dragCurrentDayIndex = null;
+                _dragCurrentStartMinute = null;
+                _dragDurationMinutes = null;
+                _dragStartGlobalPosition = null;
+                _todoCalendarView = s.first;
+              }),
+            );
+            final rangeNavigator = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: "Previous",
+                  onPressed: _todoBusy ? null : () => _shiftTodoRange(-1),
+                  icon: const Icon(Icons.chevron_left),
+                ),
+                Text(
+                  _todoRangeLabel(),
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                IconButton(
+                  tooltip: "Next",
+                  onPressed: _todoBusy ? null : () => _shiftTodoRange(1),
+                  icon: const Icon(Icons.chevron_right),
+                ),
+                TextButton(
+                  onPressed: _todoBusy
+                      ? null
+                      : () => setState(() {
+                            _dragTodoId = null;
+                            _dragOriginDayIndex = null;
+                            _dragOriginStartMinute = null;
+                            _dragCurrentDayIndex = null;
+                            _dragCurrentStartMinute = null;
+                            _dragDurationMinutes = null;
+                            _dragStartGlobalPosition = null;
+                            _todoAnchorDay = _normalizeDay(DateTime.now());
+                          }),
+                  child: const Text("Today"),
+                ),
+              ],
+            );
+
+            if (compact) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  calendarModeSwitch,
+                  const SizedBox(height: RecorderTokens.space1),
+                  rangeNavigator,
                 ],
-                selected: {_todoCalendarView},
-                showSelectedIcon: false,
-                onSelectionChanged: (s) => setState(() {
-                  _dragTodoId = null;
-                  _dragOriginDayIndex = null;
-                  _dragOriginStartMinute = null;
-                  _dragCurrentDayIndex = null;
-                  _dragCurrentStartMinute = null;
-                  _dragDurationMinutes = null;
-                  _dragStartGlobalPosition = null;
-                  _todoCalendarView = s.first;
-                }),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: RecorderTokens.space1),
-        Wrap(
-          spacing: 10,
-          runSpacing: 6,
-          children: [
-            hintItem(Icons.insights_outlined, _todoRangeLoadText(),
-                tint: scheme.primary),
-            if (_todoCalendarView == _TodoCalendarView.week)
-              hintItem(
-                Icons.open_with,
-                "Tap empty grid to create · drag block to reschedule",
-              ),
-          ],
+              );
+            }
+            return Row(
+              children: [
+                calendarModeSwitch,
+                const SizedBox(width: RecorderTokens.space2),
+                Expanded(child: rangeNavigator),
+                Text(
+                  _todoRangeLoadText(),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            );
+          },
         ),
         if (_todoCalendarView == _TodoCalendarView.week) ...[
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final scale in _WeekCalendarScale.values)
-                ChoiceChip(
-                  label: Text(_weekCalendarScaleLabel(scale)),
-                  selected: _weekCalendarScale == scale,
-                  onSelected: (_) => setState(() => _weekCalendarScale = scale),
-                ),
-            ],
+          const SizedBox(height: RecorderTokens.space1),
+          Text(
+            "点击空白时间格可创建，拖拽时间块可改期。",
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
-        const SizedBox(height: RecorderTokens.space2),
-        Row(
-          children: [
-            IconButton(
-              tooltip: "Previous",
-              onPressed: _todoBusy ? null : () => _shiftTodoRange(-1),
-              icon: const Icon(Icons.chevron_left),
-            ),
-            Expanded(
-              child: Text(
-                _todoRangeLabel(),
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-            ),
-            IconButton(
-              tooltip: "Next",
-              onPressed: _todoBusy ? null : () => _shiftTodoRange(1),
-              icon: const Icon(Icons.chevron_right),
-            ),
-            const SizedBox(width: RecorderTokens.space1),
-            OutlinedButton(
-              onPressed: _todoBusy
-                  ? null
-                  : () => setState(() {
-                        _dragTodoId = null;
-                        _dragOriginDayIndex = null;
-                        _dragOriginStartMinute = null;
-                        _dragCurrentDayIndex = null;
-                        _dragCurrentStartMinute = null;
-                        _dragDurationMinutes = null;
-                        _dragStartGlobalPosition = null;
-                        _todoAnchorDay = _normalizeDay(DateTime.now());
-                      }),
-              child: const Text("Today"),
-            ),
-          ],
-        ),
         const SizedBox(height: RecorderTokens.space2),
         if (_todoCalendarView == _TodoCalendarView.week)
           SizedBox(
@@ -2856,75 +2817,63 @@ class ReportsScreenState extends State<ReportsScreen> {
     final mainPanel = _plannerDimension == _PlannerDimension.todo
         ? _todoListDimension(context)
         : _todoCalendarDimension(context);
-    final modeTitle = _plannerDimension == _PlannerDimension.todo
-        ? "TODO Focus"
-        : "Calendar Planning";
-    final modeHint = _plannerDimension == _PlannerDimension.todo
-        ? "Capture tasks, prioritize, and complete quickly."
-        : "Plan weekly/monthly schedule and drag to reschedule.";
-    final modeIcon = _plannerDimension == _PlannerDimension.todo
-        ? Icons.checklist_outlined
-        : Icons.calendar_month_outlined;
-
-    Widget plannerActions({required bool compact}) {
-      final insightsChip = FilterChip(
-        selected: _plannerShowInsights,
-        onSelected: (_) =>
-            setState(() => _plannerShowInsights = !_plannerShowInsights),
-        avatar: Icon(
-          _plannerShowInsights
-              ? Icons.view_sidebar_outlined
-              : Icons.view_sidebar,
-          size: 16,
-          color:
-              _plannerShowInsights ? scheme.primary : scheme.onSurfaceVariant,
-        ),
-        label: Text(_plannerShowInsights ? "Insights on" : "Insights"),
-      );
-
-      final newTodoButton = FilledButton.icon(
-        onPressed: _todoBusy ? null : () => _openTodoEditor(),
-        icon: const Icon(Icons.add, size: 18),
-        label: const Text("New TODO"),
-      );
-
-      if (compact) {
-        return Wrap(
-          spacing: RecorderTokens.space2,
-          runSpacing: RecorderTokens.space2,
-          children: [newTodoButton, insightsChip],
-        );
-      }
-
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          insightsChip,
-          const SizedBox(width: RecorderTokens.space2),
-          newTodoButton,
-        ],
-      );
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         LayoutBuilder(
           builder: (context, constraints) {
+            final insightsToggle = Tooltip(
+              message: _plannerShowInsights ? "Hide insights" : "Show insights",
+              child: IconButton(
+                onPressed: () => setState(
+                    () => _plannerShowInsights = !_plannerShowInsights),
+                icon: Icon(
+                  _plannerShowInsights
+                      ? Icons.view_sidebar_outlined
+                      : Icons.view_sidebar,
+                  size: 18,
+                ),
+                style: IconButton.styleFrom(
+                  foregroundColor: _plannerShowInsights
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                  backgroundColor: _plannerShowInsights
+                      ? scheme.primary.withValues(alpha: 0.12)
+                      : scheme.surfaceContainerLowest,
+                ),
+              ),
+            );
+            final newTodoButton = FilledButton.icon(
+              onPressed: _todoBusy ? null : () => _openTodoEditor(),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text("New"),
+            );
+            final newTodoIconButton = Tooltip(
+              message: "New TODO",
+              child: IconButton(
+                onPressed: _todoBusy ? null : () => _openTodoEditor(),
+                icon: const Icon(Icons.add, size: 18),
+                style: IconButton.styleFrom(
+                  foregroundColor: scheme.primary,
+                  backgroundColor: scheme.primary.withValues(alpha: 0.12),
+                ),
+              ),
+            );
             if (constraints.maxWidth < 760) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Planner",
-                      style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 4),
-                  Text(
-                    "Planner：安排待办与时间块（执行视图）",
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelMedium
-                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text("Planner",
+                            style: Theme.of(context).textTheme.titleLarge),
+                      ),
+                      newTodoIconButton,
+                    ],
                   ),
+                  const SizedBox(height: RecorderTokens.space1),
                   if (_lastRefreshedAt != null)
                     Text(
                       _updatedAgoText(_lastRefreshedAt),
@@ -2933,12 +2882,13 @@ class ReportsScreenState extends State<ReportsScreen> {
                           .labelSmall
                           ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
-                  const SizedBox(height: RecorderTokens.space2),
-                  plannerActions(compact: true),
+                  const SizedBox(height: RecorderTokens.space1),
+                  Align(alignment: Alignment.centerLeft, child: insightsToggle),
                 ],
               );
             }
             return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Column(
@@ -2946,14 +2896,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                     children: [
                       Text("Planner",
                           style: Theme.of(context).textTheme.titleLarge),
-                      const SizedBox(height: 2),
-                      Text(
-                        "Planner：安排待办与时间块（执行视图）",
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelMedium
-                            ?.copyWith(color: scheme.onSurfaceVariant),
-                      ),
+                      const SizedBox(height: 4),
                       if (_lastRefreshedAt != null)
                         Text(
                           _updatedAgoText(_lastRefreshedAt),
@@ -2965,75 +2908,51 @@ class ReportsScreenState extends State<ReportsScreen> {
                     ],
                   ),
                 ),
-                plannerActions(compact: false),
+                insightsToggle,
+                const SizedBox(width: RecorderTokens.space2),
+                newTodoButton,
               ],
             );
           },
         ),
         const SizedBox(height: RecorderTokens.space2),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(RecorderTokens.space3),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(modeIcon, size: 16, color: scheme.primary),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      modeTitle,
-                      style: Theme.of(context).textTheme.labelLarge,
-                    ),
-                  ),
-                  Text(
-                    "Mode",
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                modeHint,
-                style: Theme.of(context)
-                    .textTheme
-                    .labelMedium
-                    ?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: RecorderTokens.space2),
-              SegmentedButton<_PlannerDimension>(
-                segments: const [
-                  ButtonSegment(
-                    value: _PlannerDimension.todo,
-                    icon: Icon(Icons.checklist_outlined),
-                    label: Text("TODO"),
-                  ),
-                  ButtonSegment(
-                    value: _PlannerDimension.calendar,
-                    icon: Icon(Icons.calendar_month_outlined),
-                    label: Text("Calendar"),
-                  ),
-                ],
-                selected: {_plannerDimension},
-                showSelectedIcon: false,
-                onSelectionChanged: (s) =>
-                    setState(() => _plannerDimension = s.first),
-              ),
-              const SizedBox(height: RecorderTokens.space2),
-              _plannerCompactStats(context),
-            ],
-          ),
+        SegmentedButton<_PlannerDimension>(
+          segments: const [
+            ButtonSegment(
+              value: _PlannerDimension.todo,
+              icon: Icon(Icons.checklist_outlined),
+              label: Text("TODO"),
+            ),
+            ButtonSegment(
+              value: _PlannerDimension.calendar,
+              icon: Icon(Icons.calendar_month_outlined),
+              label: Text("Calendar"),
+            ),
+          ],
+          selected: {_plannerDimension},
+          showSelectedIcon: false,
+          onSelectionChanged: (s) =>
+              setState(() => _plannerDimension = s.first),
         ),
+        if (_plannerDimension == _PlannerDimension.todo) ...[
+          const SizedBox(height: RecorderTokens.space2),
+          _plannerCompactStats(context),
+        ] else ...[
+          const SizedBox(height: RecorderTokens.space1),
+          Text(
+            "Week / Month 视图，支持拖拽调整时间。",
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
         const SizedBox(height: RecorderTokens.space2),
+        Divider(
+          height: 1,
+          color: scheme.outline.withValues(alpha: 0.14),
+        ),
+        const SizedBox(height: RecorderTokens.space3),
         LayoutBuilder(
           builder: (context, constraints) {
             if (!_plannerShowInsights) {
