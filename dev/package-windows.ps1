@@ -367,7 +367,7 @@ if (-not (Test-Path $collectorExe)) {
 }
 
 if (-not (Test-Path (Join-Path $RepoRoot "recorderphone_ui\\pubspec.yaml"))) {
-  throw "Missing recorderphone_ui (Flutter project). Run: flutter create --platforms=windows,android recorderphone_ui"
+  throw "Missing recorderphone_ui (Flutter project). Run: flutter create --platforms=windows recorderphone_ui"
 }
 
 if (-not $NoBuild) {

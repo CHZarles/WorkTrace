@@ -1,4 +1,4 @@
-# Flutter UI（Windows + Android 共用）
+# Flutter UI（Windows）
 
 这部分只提供 **UI 模板代码**（含 tokens 主题映射 + 调用 Core API 的页面骨架）。  
 由于当前环境未安装 Flutter SDK，仓库里不包含 `flutter create` 生成的 platform 工程文件。
@@ -8,12 +8,12 @@
 - 安装 Visual Studio 2022 并勾选 Workload：`Desktop development with C++`（含 MSVC、CMake tools、Windows 10/11 SDK）
 
 ## 快速开始（在你的 Windows / macOS / Linux 上）
-1) 创建 Flutter app（生成 windows/android 平台目录）
+1) 创建 Flutter app（生成 windows 平台目录）
 ```bash
-flutter create --platforms=windows,android recorderphone_ui
+flutter create --platforms=windows recorderphone_ui
 ```
-> 如果你想先用浏览器快速跑 UI：创建时把 `web` 也加上：  
-> `flutter create --platforms=windows,android,web recorderphone_ui`  
+> 如果你想先用浏览器快速跑 UI：创建时把 `web` 也加上：
+> `flutter create --platforms=windows,web recorderphone_ui`
 > 或在已有工程里执行：`flutter create --platforms=web .`
 2) 用本仓库模板覆盖生成项目的 `lib/` 与 `pubspec.yaml`
 macOS/Linux/WSL：
@@ -41,9 +41,6 @@ cd recorderphone_ui
 flutter pub get
 flutter run -d windows
 ```
-
-> Android 真机/模拟器要访问桌面 Core，需要把 `Server URL` 改成桌面 IP（同一局域网），或后续做局域网配对。
-> 开发期更推荐用 `adb reverse` / 模拟器 `10.0.2.2`，见：`ANDROID_DEV.md`。
 
 你现在能看到的页面（模板实现）：
 - Today：Today Top（应用/域名聚合 + 图标 + 一键黑名单）+ Now（当前使用）+ Review due（到点复盘入口）

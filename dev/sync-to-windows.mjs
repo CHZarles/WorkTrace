@@ -10,7 +10,7 @@
  *
  * Notes:
  * - Runs an initial rsync, then watches the repo and debounces subsequent rsync runs.
- * - Excludes build artifacts by default (.git, node_modules, android build, windows bin/obj, etc.)
+ * - Excludes build artifacts by default (.git, node_modules, windows bin/obj, etc.)
  */
 
 import { spawn } from "node:child_process";
@@ -38,8 +38,6 @@ const EXCLUDED_DIR_NAMES = new Set([
   "bin",
   "obj",
   "build",
-  ".gradle",
-  ".kotlin",
   "data",
   // Local Windows packaging output (do not delete when mirroring).
   "dist"
@@ -52,9 +50,6 @@ const EXCLUDE_GLOBS = [
   ".vscode/",
   "**/node_modules/",
   "target/",
-  "android/**/build/",
-  "android/**/.gradle/",
-  "android/**/.kotlin/",
   "windows/**/bin/",
   "windows/**/obj/",
   // Local-only Flutter working copy created on Windows side.

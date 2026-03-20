@@ -61,7 +61,7 @@ assertExists(SRC_ASSETS, "Missing ui_flutter/template/assets.");
 assertExists(SRC_PUBSPEC, "Missing ui_flutter/template/pubspec.yaml.");
 assertExists(
   DEST_UI,
-  "Create your Windows Flutter project first (on Windows):\n  flutter create --platforms=windows,android recorderphone_ui"
+  "Create your Windows Flutter project first (on Windows):\n  flutter create --platforms=windows recorderphone_ui"
 );
 
 async function ensureDest() {

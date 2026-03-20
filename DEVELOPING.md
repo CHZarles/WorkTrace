@@ -9,7 +9,6 @@ collectors/        Windows 采集器（windows_collector）
 extension/         Chrome/Edge MV3 扩展（Tab 域名/标题/音频上报）
 ui_flutter/        Flutter UI 模板（真实工程用 overlay 覆盖）
 recorderphone_ui/  你本机生成的 Flutter 工程（运行/打包用，通常不提交）
-packages/          Flutter plugins（Android UsageStats 等）
 dev/               开发/打包脚本（overlay/sync/package/run）
 schemas/           事件 schema（供扩展/采集器对齐）
 ```
@@ -19,10 +18,5 @@ schemas/           事件 schema（供扩展/采集器对齐）
 - 一键启动（本机 Core + Collector + UI）：`dev/run-desktop.ps1`
 - 打包成便携目录（含 Core/Collector/UI）：`dev/package-windows.ps1`
 
-## Android 开发入口（真机测试）
-- 见 `ANDROID_DEV.md`
-- 一键跑真机：`dev/run-android.ps1`
-
 ## 发布（GitHub Releases）
 - 见 `RELEASING.md`（tag 触发 `.github/workflows/release-windows.yml`）
-

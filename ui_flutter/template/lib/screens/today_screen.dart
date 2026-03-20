@@ -1,6 +1,5 @@
 import "dart:async";
 
-import "package:flutter/foundation.dart";
 import "package:flutter/gestures.dart";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
@@ -324,9 +323,6 @@ class TodayScreenState extends State<TodayScreen> {
   DateTime _todayDay() => _normalizeDay(DateTime.now());
 
   bool _viewingToday() => _isSameDay(_normalizeDay(_day), _todayDay());
-
-  bool _isAndroid() =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   bool _serverLooksLikeLocalhost() {
     final uri = Uri.tryParse(widget.serverUrl.trim());
@@ -1381,8 +1377,6 @@ class TodayScreenState extends State<TodayScreen> {
     final dueAudioTop = due == null ? null : _blockAudioTopItem(due);
 
     final scheme = Theme.of(context).colorScheme;
-    final showAndroidLocalhostHint =
-        _isAndroid() && _serverLooksLikeLocalhost();
 
     Widget metric({
       required IconData icon,
@@ -1462,37 +1456,6 @@ class TodayScreenState extends State<TodayScreen> {
                 ),
               ],
             ),
-            if (showAndroidLocalhostHint) ...[
-              const SizedBox(height: RecorderTokens.space2),
-              Container(
-                padding: const EdgeInsets.all(RecorderTokens.space3),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
-                  border:
-                      Border.all(color: scheme.outline.withValues(alpha: 0.12)),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.phone_android,
-                        size: 18, color: scheme.onSurfaceVariant),
-                    const SizedBox(width: RecorderTokens.space2),
-                    Expanded(
-                      child: Text(
-                        "Android: ${widget.serverUrl} points to your phone. To connect to desktop Core, set Server URL to your desktop LAN IP, or run `adb reverse tcp:17600 tcp:17600` and keep using http://127.0.0.1:17600.",
-                        style: Theme.of(context).textTheme.labelMedium,
-                      ),
-                    ),
-                    if (widget.onOpenSettings != null)
-                      TextButton(
-                        onPressed: widget.onOpenSettings,
-                        child: const Text("Settings"),
-                      ),
-                  ],
-                ),
-              ),
-            ],
             const SizedBox(height: RecorderTokens.space3),
             Wrap(
               spacing: RecorderTokens.space2,

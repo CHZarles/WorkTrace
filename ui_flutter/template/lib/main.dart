@@ -7,7 +7,6 @@ import "utils/platform_args.dart";
 import "utils/single_instance.dart";
 
 import "screens/app_shell.dart";
-import "mobile/mobile_shell.dart";
 import "theme/recorder_theme.dart";
 
 const _prefWindowsDisableSemantics = "windows_disable_semantics";
@@ -54,20 +53,16 @@ class RecorderPhoneApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isAndroid =
-        !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
     final app = MaterialApp(
       title: "RecorderPhone",
       theme: RecorderTheme.light(),
       darkTheme: RecorderTheme.dark(),
       themeMode: ThemeMode.system,
-      home: isAndroid
-          ? const MobileShell()
-          : AppShell(
-              initialDeepLink: initialDeepLink,
-              startMinimized: startMinimized,
-              externalCommands: externalCommands,
-            ),
+      home: AppShell(
+        initialDeepLink: initialDeepLink,
+        startMinimized: startMinimized,
+        externalCommands: externalCommands,
+      ),
     );
 
     if (!disableSemantics) return app;

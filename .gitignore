@@ -5,12 +5,6 @@
 .vs/
 *.iml
 
-# Android / Gradle
-android/**/build/
-android/**/.gradle/
-android/**/local.properties
-android/**/.kotlin/
-
 # .NET
 windows/**/bin/
 windows/**/obj/

@@ -1,6 +1,5 @@
 import "dart:async";
 
-import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:shared_preferences/shared_preferences.dart";
@@ -955,8 +954,6 @@ class SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _editServerUrl() async {
-    final isAndroid =
-        !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
     final controller = TextEditingController(text: widget.serverUrl);
     final saved = await showDialog<String>(
       context: context,
@@ -976,37 +973,6 @@ class SettingsScreenState extends State<SettingsScreen> {
                   hintText: "http://127.0.0.1:17600",
                 ),
               ),
-              if (isAndroid) ...[
-                const SizedBox(height: RecorderTokens.space3),
-                Text(
-                  "Android tips",
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-                const SizedBox(height: RecorderTokens.space1),
-                Text(
-                  "• Emulator: use http://10.0.2.2:17600\n"
-                  "• Physical device: use your desktop LAN IP\n"
-                  "• Dev shortcut: run `adb reverse tcp:17600 tcp:17600`, then keep using http://127.0.0.1:17600",
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-                const SizedBox(height: RecorderTokens.space2),
-                Wrap(
-                  spacing: RecorderTokens.space2,
-                  runSpacing: RecorderTokens.space2,
-                  children: [
-                    OutlinedButton(
-                      onPressed: () =>
-                          controller.text = "http://10.0.2.2:17600",
-                      child: const Text("Use 10.0.2.2"),
-                    ),
-                    OutlinedButton(
-                      onPressed: () =>
-                          controller.text = "http://127.0.0.1:17600",
-                      child: const Text("Use 127.0.0.1"),
-                    ),
-                  ],
-                ),
-              ],
             ],
           ),
         ),
