@@ -8,7 +8,8 @@ StartupController getStartupController() => _IoStartupController();
 
 class _IoStartupController implements StartupController {
   static const _runKey = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
-  static const _valueName = "RecorderPhone";
+  static const _valueName = "WorkTrace";
+  static const _legacyValueName = "RecorderPhone";
 
   @override
   bool get isAvailable => !kIsWeb && Platform.isWindows;
@@ -16,11 +17,30 @@ class _IoStartupController implements StartupController {
   @override
   Future<bool> isEnabled() async {
     if (!isAvailable) return false;
+    if (await _hasValue(_valueName)) return true;
+    if (await _hasValue(_legacyValueName)) return true;
+    return false;
+  }
+
+  Future<bool> _hasValue(String name) async {
+    if (!isAvailable) return false;
     try {
-      final res = await Process.run("reg", ["query", _runKey, "/v", _valueName], runInShell: false);
+      final res = await Process.run("reg", ["query", _runKey, "/v", name], runInShell: false);
       return res.exitCode == 0;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<void> _deleteValue(String name) async {
+    try {
+      await Process.run(
+        "reg",
+        ["delete", _runKey, "/v", name, "/f"],
+        runInShell: false,
+      );
+    } catch (_) {
+      // ignore
     }
   }
 
@@ -45,16 +65,11 @@ class _IoStartupController implements StartupController {
         final err = (res.stderr ?? "").toString().trim();
         throw Exception(err.isEmpty ? "reg_add_failed_${res.exitCode}" : err);
       }
+      await _deleteValue(_legacyValueName);
       return;
     }
 
-    final res = await Process.run(
-      "reg",
-      ["delete", _runKey, "/v", _valueName, "/f"],
-      runInShell: false,
-    );
-    // Deleting a non-existent value returns non-zero; treat as success.
-    if (res.exitCode != 0) return;
+    await _deleteValue(_valueName);
+    await _deleteValue(_legacyValueName);
   }
 }
-

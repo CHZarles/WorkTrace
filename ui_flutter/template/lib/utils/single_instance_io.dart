@@ -19,7 +19,7 @@ bool _hasFlag(List<String> args, List<String> flags) {
 String? _extractDeepLink(List<String> args) {
   for (final a in args) {
     final s = a.trim();
-    if (s.startsWith("recorderphone://")) return s;
+    if (s.startsWith("worktrace://")) return s;
   }
   return null;
 }

@@ -54,7 +54,7 @@ class RecorderPhoneApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = MaterialApp(
-      title: "RecorderPhone",
+      title: "WorkTrace",
       theme: RecorderTheme.light(),
       darkTheme: RecorderTheme.dark(),
       themeMode: ThemeMode.system,
@@ -73,7 +73,7 @@ class RecorderPhoneApp extends StatelessWidget {
 String? _extractDeepLink(List<String> args) {
   for (final a in args) {
     final s = a.trim();
-    if (s.startsWith("recorderphone://")) return s;
+    if (s.startsWith("worktrace://")) return s;
   }
   return null;
 }
@@ -82,7 +82,7 @@ bool _isBackgroundDeepLink(String? raw) {
   final s = (raw ?? "").trim();
   if (s.isEmpty) return false;
   final uri = Uri.tryParse(s);
-  if (uri == null || uri.scheme != "recorderphone") return false;
+  if (uri == null || uri.scheme != "worktrace") return false;
   final action = (uri.queryParameters["action"] ?? "").trim().toLowerCase();
   return action == "skip" || action == "pause" || action == "resume";
 }

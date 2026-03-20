@@ -12,7 +12,7 @@
 
 ## 2. 品牌元素（轻量即可）
 ### 2.1 名称与语气
-- 产品名（占位）：RecorderPhone / Focus Log
+- 产品名：WorkTrace
 - 文案语气：短句、事实陈述、少评价词。
   - ✅ “这段主要在：VS Code 31m、github.com 9m”
   - ❌ “你又分心了！建议立刻停止！”
@@ -225,4 +225,3 @@
 ## 11. 研发对接（落地建议）
 - 统一一份 `design-tokens.json`（颜色/间距/圆角/字号），Windows 与 Android 各自映射到 Fluent/Material 实现。
 - 组件命名以语义为主（BlockCard、QuickReviewSheet、PrivacyLevelSelector），避免平台特定命名。
-

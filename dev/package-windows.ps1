@@ -53,7 +53,7 @@ function Stop-ProcessesAndWait {
     }
   }
   if ($still.Count -gt 0) {
-    throw "Failed to stop running processes: $($still -join ', '). Close RecorderPhone (tray Exit) and retry."
+    throw "Failed to stop running processes: $($still -join ', '). Close WorkTrace (tray Exit) and retry."
   }
 }
 
@@ -218,7 +218,7 @@ function Build-Installer {
   }
 
   $version = Get-InstallerVersion
-  $outputBase = "RecorderPhone-Setup"
+  $outputBase = "WorkTrace-Setup"
   Write-Host "[package] build installer ($version) -> $(Join-Path $OutputDir "$outputBase.exe")"
   $null = (& $iscc `
       "/DAppVersion=$version" `
@@ -346,7 +346,7 @@ if (-not $NoOverlayUI) {
 if (-not $NoBuild) {
   # Ensure builds don't fail due to locked target/release exes (dev agent / packaged agent still running).
   Write-Host "[package] stopping processes (pre-build)..."
-  Stop-ProcessesAndWait -Names @("RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector") -TimeoutSeconds 6
+  Stop-ProcessesAndWait -Names @("WorkTrace", "RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector") -TimeoutSeconds 6
 
   Write-Host "[package] cargo build -p recorder_core --release"
   cargo build -p recorder_core --release
@@ -385,7 +385,7 @@ if (-not (Test-Path $flutterReleaseDir)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($OutDir)) {
-  $OutDir = Join-Path $RepoRoot "dist\\windows\\RecorderPhone"
+  $OutDir = Join-Path $RepoRoot "dist\\windows\\WorkTrace"
 }
 
 function Stop-ProcessByExecutablePath {
@@ -440,7 +440,7 @@ Copy-ItemWithRetry -From $collectorExe -To (Join-Path $stagingDir "windows_colle
 
 # Rename UI entrypoint exe inside staging.
 $stagedUiExe = Join-Path $stagingDir "recorderphone_ui.exe"
-$stagedDistExe = Join-Path $stagingDir "RecorderPhone.exe"
+$stagedDistExe = Join-Path $stagingDir "WorkTrace.exe"
 if (Test-Path $stagedUiExe) {
   Move-Item -Force $stagedUiExe $stagedDistExe
 }
@@ -460,16 +460,18 @@ Write-BuildInfo -Dir $stagingDir -CoreExe $coreExe -CollectorExe $collectorExe
 
 # 2) Stop running packaged processes (so we can swap/overwrite).
 Write-Host "[package] stopping running processes..."
+Stop-ProcessByExecutablePath (Join-Path $OutDir "WorkTrace.exe")
 Stop-ProcessByExecutablePath (Join-Path $OutDir "RecorderPhone.exe")
 Stop-ProcessByExecutablePath (Join-Path $OutDir "recorderphone_ui.exe")
 Stop-ProcessByExecutablePath (Join-Path $OutDir "recorder_core.exe")
 Stop-ProcessByExecutablePath (Join-Path $OutDir "windows_collector.exe")
 # Also stop any remaining processes by image name (handles cases where ExecutablePath is not accessible).
+Stop-ProcessByNameBestEffort "WorkTrace"
 Stop-ProcessByNameBestEffort "RecorderPhone"
 Stop-ProcessByNameBestEffort "recorderphone_ui"
 Stop-ProcessByNameBestEffort "recorder_core"
 Stop-ProcessByNameBestEffort "windows_collector"
-Stop-ProcessesAndWait -Names @("RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector") -TimeoutSeconds 8
+Stop-ProcessesAndWait -Names @("WorkTrace", "RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector") -TimeoutSeconds 8
 
 # 3) Swap staged folder into place (atomic move if possible; otherwise in-place update).
 try {
@@ -487,7 +489,7 @@ if (Test-Path $OutDir) {
     try {
       Remove-DirectoryWithRetry -Path $OutDir -Attempts 6
     } catch {
-      Write-Host "[package] warn: failed to rename/clean $OutDir; will update in-place. Close RecorderPhone if files are locked."
+      Write-Host "[package] warn: failed to rename/clean $OutDir; will update in-place. Close WorkTrace if files are locked."
     }
   }
 }
@@ -519,12 +521,12 @@ if (-not $swapped) {
     Copy-ItemWithRetry -From (Join-Path $stagingDir "recorder_core.exe") -To (Join-Path $OutDir "recorder_core.exe")
     Copy-ItemWithRetry -From (Join-Path $stagingDir "windows_collector.exe") -To (Join-Path $OutDir "windows_collector.exe")
   } catch {
-    throw "Failed to overwrite agent binaries in $OutDir. Close RecorderPhone / stop agent and retry."
+    throw "Failed to overwrite agent binaries in $OutDir. Close WorkTrace / stop agent and retry."
   }
 
   # Ensure UI entrypoint exists (fallback if rename didn't propagate).
   $uiExe = Join-Path $OutDir "recorderphone_ui.exe"
-  $distExe = Join-Path $OutDir "RecorderPhone.exe"
+  $distExe = Join-Path $OutDir "WorkTrace.exe"
   if ((Test-Path $uiExe) -and (-not (Test-Path $distExe))) {
     Move-Item -Force $uiExe $distExe
   } elseif (Test-Path $uiExe) {
@@ -546,7 +548,7 @@ if (-not $swapped) {
 }
 
 # Resolve UI entrypoint exe in final output folder.
-$distExe = Join-Path $OutDir "RecorderPhone.exe"
+$distExe = Join-Path $OutDir "WorkTrace.exe"
 if (-not (Test-Path $distExe)) {
   $other = Get-ChildItem -Path $OutDir -Filter "*.exe" -File -ErrorAction SilentlyContinue `
     | Where-Object { $_.Name -ne "recorder_core.exe" -and $_.Name -ne "windows_collector.exe" } `
@@ -565,14 +567,14 @@ Assert-SameHash -Name "windows_collector.exe" -From $collectorExe -To (Join-Path
 if ($InstallProtocol) {
   if (-not (Test-Path $distExe)) {
     # Fallback if exe wasn't renamed.
-    $distExe = Join-Path $OutDir "RecorderPhone.exe"
+    $distExe = Join-Path $OutDir "WorkTrace.exe"
   }
-  Write-Host "[package] installing recorderphone:// protocol -> $distExe"
-  & (Join-Path $RepoRoot "dev\\install-recorderphone-protocol.ps1") -RepoRoot $RepoRoot -ExePath $distExe
+  Write-Host "[package] installing worktrace:// protocol -> $distExe"
+  & (Join-Path $RepoRoot "dev\\install-worktrace-protocol.ps1") -RepoRoot $RepoRoot -ExePath $distExe
 }
 
 if ($Zip) {
-  $zipPath = Join-Path (Split-Path $OutDir -Parent) "RecorderPhone-windows.zip"
+  $zipPath = Join-Path (Split-Path $OutDir -Parent) "WorkTrace-windows.zip"
   if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
   Write-Host "[package] zip -> $zipPath"
   Compress-Archive -Path (Join-Path $OutDir "*") -DestinationPath $zipPath -Force

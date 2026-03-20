@@ -1,17 +1,17 @@
-#define MyAppName "RecorderPhone"
-#define MyAppExeName "RecorderPhone.exe"
+#define MyAppName "WorkTrace"
+#define MyAppExeName "WorkTrace.exe"
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
 #ifndef AppSourceDir
-  #define AppSourceDir "..\\..\\dist\\windows\\RecorderPhone"
+  #define AppSourceDir "..\\..\\dist\\windows\\WorkTrace"
 #endif
 #ifndef OutputDir
   #define OutputDir "..\\..\\dist\\windows"
 #endif
 #ifndef OutputBaseFilename
-  #define OutputBaseFilename "RecorderPhone-Setup"
+  #define OutputBaseFilename "WorkTrace-Setup"
 #endif
 
 [Setup]
@@ -19,8 +19,8 @@ AppId={{D3A8F3B5-3A57-4A17-9A2B-D8C1A8E1D95D}
 AppName={#MyAppName}
 AppVersion={#AppVersion}
 AppPublisher={#MyAppName}
-DefaultDirName={localappdata}\Programs\RecorderPhone
-DefaultGroupName=RecorderPhone
+DefaultDirName={localappdata}\Programs\WorkTrace
+DefaultGroupName=WorkTrace
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
 ArchitecturesAllowed=x64compatible
@@ -45,13 +45,13 @@ Name: "desktopicon"; Description: "Create desktop shortcut"; GroupDescription: "
 Source: "{#AppSourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{autoprograms}\RecorderPhone"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\RecorderPhone"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\WorkTrace"; Filename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\WorkTrace"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Registry]
-Root: HKCU; Subkey: "Software\Classes\recorderphone"; ValueType: string; ValueName: ""; ValueData: "URL:RecorderPhone Protocol"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\recorderphone"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\recorderphone\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\worktrace"; ValueType: string; ValueName: ""; ValueData: "URL:WorkTrace Protocol"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\worktrace"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\worktrace\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch RecorderPhone"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch WorkTrace"; Flags: nowait postinstall skipifsilent

@@ -9,11 +9,11 @@ Set-Location $RepoRoot
 Write-Host "[overlay-ui] repo: $RepoRoot"
 
 if (-not (Test-Path ".\\ui_flutter\\template\\lib")) {
-  throw "Missing ui_flutter\\template\\lib. Run from the RecorderPhone repo."
+  throw "Missing ui_flutter\\template\\lib. Run from the WorkTrace repo."
 }
 
 if (-not (Test-Path ".\\ui_flutter\\template\\assets")) {
-  throw "Missing ui_flutter\\template\\assets. Run from the RecorderPhone repo."
+  throw "Missing ui_flutter\\template\\assets. Run from the WorkTrace repo."
 }
 
 if (-not (Test-Path ".\\recorderphone_ui")) {

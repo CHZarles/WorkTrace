@@ -1,4 +1,4 @@
-# RecorderPhone Codebase Research
+# WorkTrace Codebase Research
 
 ## High-Level Summary
 The repository currently combines a Rust Core service, a Windows collector, a Manifest V3 browser extension, multiple Flutter clients, an Android UsageStats plugin, and separate Windows and Android app trees. The Rust Core is the central runtime: it owns the HTTP API, SQLite schema, privacy handling, tracking pause state, block and timeline aggregation, exports, and report generation/scheduling. The Windows collector and browser extension both send ingest events into the Core’s `/event` endpoint, while the Flutter desktop app talks back to the Core over HTTP for review, settings, reporting, and export workflows. The Flutter Android path is separate from the Core-backed desktop path: it reads UsageStats through a Flutter plugin, stores generated blocks locally in SQLite, and renders its own Today, Review, and Settings screens. The repository also contains a separate Flutter app under `recorderphone_ui`, a WinUI 3 Windows app with a local ingest server, and an Android Compose app with a static Today screen.
@@ -23,7 +23,7 @@ The repository currently combines a Rust Core service, a Windows collector, a Ma
 ### Windows Collector
 - The Windows collector exposes CLI options for the Core URL, poll interval, title/exe-path capture, heartbeat, background-audio tracking, review notifications, repeat intervals, and idle cutoff. The Windows entrypoint enforces a single-instance mutex, posts `app_active` and `app_audio`/`app_audio_stop` events to `/event`, and resets foreground attribution when system idle time exceeds the configured cutoff. `collectors/windows_collector/src/main.rs:1-170` `collectors/windows_collector/src/main.rs:332-365`
 - Foreground detection reads the active window handle, pid, title, and executable path through Win32 APIs; background-audio detection enumerates CoreAudio sessions, filters out browser executables and `audiodg.exe`, and reports the selected process as an audio source. `collectors/windows_collector/src/main.rs:628-805`
-- Review notification polling calls the Core’s `/tracking/status` and `/blocks/due` endpoints, formats the due block time range and top items, and emits Windows toast actions that deep-link into `recorderphone://review`, `recorderphone://review?action=skip`, and `recorderphone://review?action=pause&minutes=15`. `collectors/windows_collector/src/main.rs:368-598`
+- Review notification polling calls the Core’s `/tracking/status` and `/blocks/due` endpoints, formats the due block time range and top items, and emits Windows toast actions that deep-link into `worktrace://review`, `worktrace://review?action=skip`, and `worktrace://review?action=pause&minutes=15`. `collectors/windows_collector/src/main.rs:368-598`
 
 ### Browser Extension
 - The MV3 extension declares `tabs`, `storage`, `alarms`, and `offscreen` permissions, allows localhost HTTP targets, runs a module service worker, and exposes a popup UI. `extension/manifest.json:1-16`
@@ -37,7 +37,7 @@ The repository currently combines a Rust Core service, a Windows collector, a Ma
 ## Flutter App Under `ui_flutter/template`
 
 ### Entrypoint and Core Client
-- The main Flutter entrypoint resolves CLI args, extracts any `recorderphone://` deep link, determines whether startup should be minimized, enforces single-instance behavior, and chooses Android local mode (`MobileShell`) versus non-Android Core-backed mode (`AppShell`). `ui_flutter/template/lib/main.dart:15-125`
+- The main Flutter entrypoint resolves CLI args, extracts any `worktrace://` deep link, determines whether startup should be minimized, resolves the Windows semantics flag, enforces single-instance behavior, and launches `AppShell` with any forwarded external commands. `ui_flutter/template/lib/main.dart:14-120`
 - `CoreClient` mirrors the Core HTTP surface for health, block/day/timeline/now calls, tracking pause/resume, settings, privacy rules, block/day deletion, exports, report settings, report generation, report list/detail, and report TODO workflows. `ui_flutter/template/lib/api/core_client.dart:12-571`
 
 ### Desktop Shell and Screens
@@ -49,7 +49,7 @@ The repository currently combines a Rust Core service, a Windows collector, a Ma
 
 ### Desktop Utility Layer
 - `DesktopAgent` abstracts platform-specific agent control; the Windows implementation looks for packaged or repo-built `recorder_core.exe` and `windows_collector.exe`, finds a repo root, checks Core health/settings, starts the binaries with a pid file, and stops them by pid file and optional `taskkill`. `ui_flutter/template/lib/utils/desktop_agent.dart:1-26` `ui_flutter/template/lib/utils/desktop_agent_io.dart:45-520`
-- `SingleInstanceHandle` and its Windows implementation use loopback port `17611` to forward `"__show__"` or `recorderphone://...` messages from secondary launches to the primary instance. `ui_flutter/template/lib/utils/single_instance.dart:1-24` `ui_flutter/template/lib/utils/single_instance_io.dart:7-131`
+- `SingleInstanceHandle` and its Windows implementation use loopback port `17611` to forward `"__show__"` or `worktrace://...` messages from secondary launches to the primary instance. `ui_flutter/template/lib/utils/single_instance.dart:1-24` `ui_flutter/template/lib/utils/single_instance_io.dart:7-131`
 - `TrayController` builds a Windows system tray menu that shows Core/tracking status, opens app/data folders, triggers Quick Review, pauses/resumes tracking, and starts/restarts/stops the desktop agent while hiding the window on close by default. `ui_flutter/template/lib/utils/tray_controller.dart:1-24` `ui_flutter/template/lib/utils/tray_controller_io.dart:24-380`
 - `StartupController` reads and writes the Windows `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry for RecorderPhone, optionally adding `--minimized` to the startup command. `ui_flutter/template/lib/utils/startup.dart:1-10` `ui_flutter/template/lib/utils/startup_io.dart:9-59`
 - `UpdateManager` is a Windows-only packaged updater layer that reads `build-info.json`, checks GitHub releases, compares semantic-version tags, downloads a setup asset, writes a PowerShell updater script, and launches that updater against the current install directory. `ui_flutter/template/lib/utils/update_manager.dart:1-95` `ui_flutter/template/lib/utils/update_manager_io.dart:11-260` `ui_flutter/template/lib/utils/update_manager_io.dart:520-743`

@@ -160,7 +160,7 @@ class _AppShellState extends State<AppShell> with WindowListener {
       return;
     }
 
-    if (s.startsWith("recorderphone://")) {
+    if (s.startsWith("worktrace://")) {
       if (_deepLinkWantsForeground(s)) {
         unawaited(_showAndFocusWindow());
       }
@@ -330,7 +330,7 @@ class _AppShellState extends State<AppShell> with WindowListener {
 
   void _handleDeepLink(String raw) {
     final uri = Uri.tryParse(raw.trim());
-    if (uri == null || uri.scheme != "recorderphone") return;
+    if (uri == null || uri.scheme != "worktrace") return;
 
     final route = uri.host.isNotEmpty
         ? uri.host
@@ -374,7 +374,7 @@ class _AppShellState extends State<AppShell> with WindowListener {
 
   bool _deepLinkWantsForeground(String raw) {
     final uri = Uri.tryParse(raw.trim());
-    if (uri == null || uri.scheme != "recorderphone") return true;
+    if (uri == null || uri.scheme != "worktrace") return true;
     final action = (uri.queryParameters["action"] ?? "").trim().toLowerCase();
     if (action == "skip" || action == "pause" || action == "resume")
       return false;
@@ -590,9 +590,9 @@ class _AppShellState extends State<AppShell> with WindowListener {
         context: context,
         steps: [
           const TutorialStep(
-            title: "欢迎使用 RecorderPhone",
+            title: "欢迎使用 WorkTrace",
             body:
-                "RecorderPhone 会在本地记录你在电脑/浏览器上的使用情况，并按时间段（Block）帮你复盘。\n\n接下来用 1 分钟了解核心功能。",
+                "WorkTrace 会在本地记录你在电脑/浏览器上的使用情况，并按时间段（Block）帮你复盘。\n\n接下来用 1 分钟了解核心功能。",
           ),
           TutorialStep(
             title: "页面导航",

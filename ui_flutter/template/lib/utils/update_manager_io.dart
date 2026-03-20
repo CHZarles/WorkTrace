@@ -9,7 +9,7 @@ import "update_manager.dart";
 UpdateManager getUpdateManager() => _IoUpdateManager();
 
 class _IoUpdateManager implements UpdateManager {
-  static const _userAgent = "RecorderPhone";
+  static const _userAgent = "WorkTrace";
   static const _defaultAssetSuffix = "-windows-setup.exe";
   static const _innoAppId = "{D3A8F3B5-3A57-4A17-9A2B-D8C1A8E1D95D}";
 
@@ -355,7 +355,7 @@ class _IoUpdateManager implements UpdateManager {
     final ext = lowerPath.endsWith(".exe")
         ? ".exe"
         : (lowerPath.endsWith(".zip") ? ".zip" : ".bin");
-    final name = "RecorderPhone-${DateTime.now().millisecondsSinceEpoch}$ext";
+    final name = "WorkTrace-${DateTime.now().millisecondsSinceEpoch}$ext";
     final f = File(_join(tmp.path, name));
     final req = http.Request("GET", url);
     req.headers["User-Agent"] = _userAgent;
@@ -381,14 +381,14 @@ class _IoUpdateManager implements UpdateManager {
 param(
   [Parameter(Mandatory=$true)][string]$SetupPath,
   [string]$InstallDir = "",
-  [string]$PreferredExeName = "RecorderPhone.exe",
+  [string]$PreferredExeName = "WorkTrace.exe",
   [string]$AppId = "",
   [int]$UiPid = 0,
   [string]$StartArgs = ""
 )
 
 $ErrorActionPreference = "Stop"
-$LogPath = Join-Path $env:TEMP "RecorderPhone-updater.log"
+$LogPath = Join-Path $env:TEMP "WorkTrace-updater.log"
 
 function Write-Log {
   param([Parameter(Mandatory=$true)][string]$Line)
@@ -513,12 +513,13 @@ function Resolve-InstallDir {
 function Resolve-UiExe {
   param(
     [Parameter(Mandatory=$true)][string]$Dir,
-    [string]$Preferred = "RecorderPhone.exe"
+    [string]$Preferred = "WorkTrace.exe"
   )
   $candidates = @()
   if (-not [string]::IsNullOrWhiteSpace($Preferred)) {
     $candidates += (Join-Path $Dir $Preferred)
   }
+  $candidates += (Join-Path $Dir "WorkTrace.exe")
   $candidates += (Join-Path $Dir "RecorderPhone.exe")
 
   foreach ($c in $candidates) {
@@ -528,7 +529,7 @@ function Resolve-UiExe {
   $alts = Get-ChildItem -Path $Dir -Filter "*.exe" -File -ErrorAction SilentlyContinue `
     | Where-Object { $_.Name -ne "recorder_core.exe" -and $_.Name -ne "windows_collector.exe" } `
     | Sort-Object `
-        @{ Expression = { if ($_.Name -ieq "RecorderPhone.exe") { 0 } elseif ($_.Name -ieq "recorderphone_ui.exe") { 1 } else { 2 } } }, `
+        @{ Expression = { if ($_.Name -ieq "WorkTrace.exe") { 0 } elseif ($_.Name -ieq "RecorderPhone.exe") { 1 } elseif ($_.Name -ieq "recorderphone_ui.exe") { 2 } else { 3 } } }, `
         @{ Expression = { $_.Name } }
   if ($alts -and $alts.Count -gt 0) { return $alts[0].FullName }
   return ""
@@ -573,8 +574,8 @@ try {
     Write-Log "fallback exe: $fallbackExe"
   }
 
-  $names = @("RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector")
-  $images = @("RecorderPhone.exe", "recorderphone_ui.exe", "recorder_core.exe", "windows_collector.exe")
+  $names = @("WorkTrace", "RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector")
+  $images = @("WorkTrace.exe", "RecorderPhone.exe", "recorderphone_ui.exe", "recorder_core.exe", "windows_collector.exe")
   for ($i = 0; $i -lt 3; $i++) {
     Stop-ByName -Names $names
     Stop-ByImage -Images $images
@@ -585,7 +586,7 @@ try {
     Start-Sleep -Milliseconds 200
   }
 
-  $setupLog = Join-Path $env:TEMP "RecorderPhone-updater-setup.log"
+  $setupLog = Join-Path $env:TEMP "WorkTrace-updater-setup.log"
   $setupArgs = @(
     "/VERYSILENT",
     "/SUPPRESSMSGBOXES",
@@ -675,10 +676,10 @@ try {
       final setupAsset = await _downloadToTempFile(url);
       final stamp = DateTime.now().millisecondsSinceEpoch;
       final scriptFile = File(
-          _join(Directory.systemTemp.path, "RecorderPhone-update-$stamp.ps1"));
+          _join(Directory.systemTemp.path, "WorkTrace-update-$stamp.ps1"));
       await scriptFile.writeAsString(_updaterScript(), flush: true);
 
-      final preferredExeName = "RecorderPhone.exe";
+      final preferredExeName = "WorkTrace.exe";
       final startArgs = startMinimized ? "--minimized" : "";
 
       final args = <String>[

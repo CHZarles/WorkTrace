@@ -10,7 +10,7 @@ class SingleInstanceHandle {
   ///
   /// Messages are simple strings:
   /// - `"__show__"`: bring the existing window to foreground
-  /// - `"recorderphone://..."`: forward deep link to the running instance
+  /// - `"worktrace://..."`: forward deep link to the running instance
   final Stream<String> messages;
   final Future<void> Function() dispose;
 }
@@ -22,4 +22,3 @@ class SingleInstanceHandle {
 /// - If another instance is already running, forwards the current args to it and
 ///   returns `null` (caller should exit).
 Future<SingleInstanceHandle?> ensureSingleInstance(List<String> args) => ensureSingleInstanceImpl(args);
-

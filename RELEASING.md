@@ -4,7 +4,7 @@
 - 合并代码到 `main`
 - 打一个 tag（例如 `v0.1.1`）
 - 等 Actions 跑完
-- 去 GitHub Releases 下载 `RecorderPhone-<tag>-windows-setup.exe`（推荐安装版）
+- 去 GitHub Releases 下载 `WorkTrace-<tag>-windows-setup.exe`（推荐安装版）
 
 > 说明：我无法替你“直接上传到你的 GitHub 账号”，但可以把仓库准备好（工作流/文档/脚本），你按下面命令 push 即可。
 
@@ -17,7 +17,7 @@
 在本地仓库根目录执行（把 URL 换成你自己的）：
 
 ```bash
-git remote add origin https://github.com/<you>/RecorderPhone.git
+git remote add origin https://github.com/<you>/WorkTrace.git
 git branch -M main
 git push -u origin main
 ```
@@ -33,7 +33,7 @@ git push -u origin main
 - 手动触发：Actions → `Release (Windows)` → Run workflow（会产出 Actions artifact）
 
 产物：
-- `RecorderPhone-<tag>-windows-setup.exe`（推荐）
+- `WorkTrace-<tag>-windows-setup.exe`（推荐）
 
 校验：
 - 安装后的应用目录内包含 `build-info.json`（记录 git commit + core/collector 版本 + sha256）
@@ -68,10 +68,12 @@ git push origin v0.1.1
 
 - 这是未签名的 exe，Windows SmartScreen 可能会提示风险；通常需要“更多信息 → 仍要运行”。
 - 安装版默认安装到：
-  - `%LOCALAPPDATA%\\Programs\\RecorderPhone`
+  - `%LOCALAPPDATA%\\Programs\\WorkTrace`
 - 数据默认落在：
-  - `%LOCALAPPDATA%\\RecorderPhone\\recorder-core.db`
-  - `%LOCALAPPDATA%\\RecorderPhone\\agent-pids.json`
+  - `%LOCALAPPDATA%\\WorkTrace\\recorder-core.db`
+  - `%LOCALAPPDATA%\\WorkTrace\\agent-pids.json`
+
+如果本机已有旧的 `%LOCALAPPDATA%\\RecorderPhone`，应用会继续兼容并在可行时迁移到 `WorkTrace` 目录。
 - 托盘右键支持 `Open app folder` / `Open data folder`，可直接定位路径。
 
 ---
@@ -93,10 +95,10 @@ git push origin v0.1.1
 在 Windows PowerShell：
 
 ```powershell
-cd C:\src\RecorderPhone
+cd C:\src\WorkTrace
 powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -Installer -InstallProtocol
 ```
 
 输出：
-- `dist\windows\RecorderPhone\`（已组装目录）
-- `dist\windows\RecorderPhone-Setup.exe`
+- `dist\windows\WorkTrace\`（已组装目录）
+- `dist\windows\WorkTrace-Setup.exe`

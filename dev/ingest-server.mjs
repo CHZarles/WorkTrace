@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * RecorderPhone — WSL-friendly local ingest server (for browser extension dev)
+ * WorkTrace — WSL-friendly local ingest server (for browser extension dev)
  *
  * Endpoints:
  *  - GET  /health  -> { ok: true }
@@ -142,7 +142,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   // eslint-disable-next-line no-console
-  console.log(`RecorderPhone ingest server listening on http://${HOST}:${PORT}`);
+  console.log(`WorkTrace ingest server listening on http://${HOST}:${PORT}`);
   if (STORE_FILE) {
     // eslint-disable-next-line no-console
     console.log(`Writing NDJSON to ${STORE_FILE}`);

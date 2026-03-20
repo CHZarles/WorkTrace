@@ -52,7 +52,8 @@ class _IoDesktopAgent implements DesktopAgent {
 
     final roots = <Directory>[];
 
-    final env = Platform.environment["RECORDERPHONE_REPO_ROOT"];
+    final env = Platform.environment["WORKTRACE_REPO_ROOT"] ??
+        Platform.environment["RECORDERPHONE_REPO_ROOT"];
     if (env != null && env.trim().isNotEmpty) {
       roots.add(Directory(env.trim()));
     }
@@ -130,12 +131,26 @@ class _IoDesktopAgent implements DesktopAgent {
     return _AgentBinaries(mode: "repo", coreExe: core, collectorExe: collector);
   }
 
-  Directory _defaultDataRoot() {
+  Directory _userDataRoot(String name) {
     final sep = Platform.pathSeparator;
     final base = (Platform.environment["LOCALAPPDATA"] ?? "").trim();
     final fallback = (Platform.environment["APPDATA"] ?? "").trim();
     final root = base.isNotEmpty ? base : (fallback.isNotEmpty ? fallback : Directory.systemTemp.path);
-    return Directory("$root${sep}RecorderPhone");
+    return Directory("$root${sep}$name");
+  }
+
+  Directory _defaultDataRoot() {
+    final current = _userDataRoot("WorkTrace");
+    if (current.existsSync()) return current;
+
+    final legacy = _userDataRoot("RecorderPhone");
+    if (!legacy.existsSync()) return current;
+
+    try {
+      return Directory(legacy.renameSync(current.path).path);
+    } catch (_) {
+      return legacy;
+    }
   }
 
   Directory _dataRootForMode({required _AgentBinaries bins, String? repoRoot}) {

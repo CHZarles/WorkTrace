@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * RecorderPhone — WSL -> Windows autosync helper
+ * WorkTrace — WSL -> Windows autosync helper
  *
  * Goal:
  * - Edit in WSL, but run/build Windows-only tooling (Flutter Windows / Visual Studio toolchain / Rust MSVC) against a mirror on /mnt/c/...
  *
  * Usage:
- *   node dev/sync-to-windows.mjs /mnt/c/src/RecorderPhone
+ *   node dev/sync-to-windows.mjs /mnt/c/src/WorkTrace
  *
  * Notes:
  * - Runs an initial rsync, then watches the repo and debounces subsequent rsync runs.
@@ -21,7 +21,7 @@ const args = process.argv.slice(2);
 const dest = args[0];
 if (!dest || dest.startsWith("-")) {
   // eslint-disable-next-line no-console
-  console.error("Usage: node dev/sync-to-windows.mjs /mnt/c/src/RecorderPhone");
+  console.error("Usage: node dev/sync-to-windows.mjs /mnt/c/src/WorkTrace");
   process.exit(2);
 }
 

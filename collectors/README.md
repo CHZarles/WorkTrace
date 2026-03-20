@@ -20,6 +20,6 @@ rustup update stable
 
 ## 一键运行（Windows PowerShell）
 ```powershell
-cd C:\src\RecorderPhone
+cd C:\src\WorkTrace
 powershell -ExecutionPolicy Bypass -File .\dev\run-collector.ps1 -CoreUrl http://127.0.0.1:17600 -SendTitle
 ```

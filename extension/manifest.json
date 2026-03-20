@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "RecorderPhone (Domain Tracker)",
+  "name": "WorkTrace (Domain Tracker)",
   "version": "0.1.0",
-  "description": "Domain-level active tab tracking for RecorderPhone (sends only hostname by default).",
+  "description": "Domain-level active tab tracking for WorkTrace (sends only hostname by default).",
   "permissions": ["tabs", "storage", "alarms", "offscreen"],
   "host_permissions": ["http://127.0.0.1:*/*", "http://localhost:*/*"],
   "background": {
@@ -10,7 +10,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "RecorderPhone",
+    "default_title": "WorkTrace",
     "default_popup": "popup.html"
   }
 }

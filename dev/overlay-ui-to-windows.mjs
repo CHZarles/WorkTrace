@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * RecorderPhone — overlay Flutter UI template into a Windows Flutter project (from WSL).
+ * WorkTrace — overlay Flutter UI template into a Windows Flutter project (from WSL).
  *
  * Why:
  * - `ui_flutter/template/` is the source of truth for UI code.
@@ -8,8 +8,8 @@
  * - If you can't (or don't want to) run PowerShell scripts, you can run this from WSL to keep UI in sync.
  *
  * Usage:
- *   node dev/overlay-ui-to-windows.mjs /mnt/c/src/RecorderPhone
- *   node dev/overlay-ui-to-windows.mjs /mnt/c/src/RecorderPhone --watch
+ *   node dev/overlay-ui-to-windows.mjs /mnt/c/src/WorkTrace
+ *   node dev/overlay-ui-to-windows.mjs /mnt/c/src/WorkTrace --watch
  *
  * What it does:
  * - rsync `ui_flutter/template/lib/` -> `<dest>/recorderphone_ui/lib/` (with --delete)
@@ -30,7 +30,7 @@ const watchMode = args.includes("--watch");
 
 if (!destRoot) {
   // eslint-disable-next-line no-console
-  console.error("Usage: node dev/overlay-ui-to-windows.mjs /mnt/c/src/RecorderPhone [--watch]");
+  console.error("Usage: node dev/overlay-ui-to-windows.mjs /mnt/c/src/WorkTrace [--watch]");
   process.exit(2);
 }
 
@@ -56,7 +56,7 @@ function assertExists(p, hint) {
   process.exit(2);
 }
 
-assertExists(SRC_LIB, "Run this from the RecorderPhone repo root (where ui_flutter/template exists).");
+assertExists(SRC_LIB, "Run this from the WorkTrace repo root (where ui_flutter/template exists).");
 assertExists(SRC_ASSETS, "Missing ui_flutter/template/assets.");
 assertExists(SRC_PUBSPEC, "Missing ui_flutter/template/pubspec.yaml.");
 assertExists(

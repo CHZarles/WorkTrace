@@ -1,4 +1,4 @@
-# RecorderPhone（暂定名）PRD（可执行版）
+# WorkTrace PRD（执行版）
 
 ## 1. 背景与问题
 用户在 Windows11 PC 与 Android 手机之间频繁切换，真实时间去向分散在应用、窗口与网页 Tab 中；目前靠记忆或零散记录难以复盘，导致：
@@ -206,7 +206,7 @@
   - 空闲：`GetLastInputInfo`
   - 后台音频 App（可选）：Windows CoreAudio sessions（用于“后台播放也算 Now”）
 - 数据库：`SQLite`（Core 内 `rusqlite` bundled）
-- 通知：Windows Toast（采集器 best-effort 发 toast；点击通过自定义 `recorderphone://` 深链回到 UI）
+- 通知：Windows Toast（采集器 best-effort 发 toast；点击通过自定义 `worktrace://` 深链回到 UI）
 - 打包/更新：便携目录（Portable zip）+ GitHub Actions tag 发布（无需安装器；后续再考虑自动更新/签名）
 
 ### 13.2 浏览器扩展（Edge/Chrome，MVP 可选但建议做）

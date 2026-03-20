@@ -550,18 +550,18 @@ async fn maybe_notify_due_review_block(
 
     // Best-effort toast notification (click -> open Quick Review via custom protocol).
     //
-    // Requires registering `recorderphone://` on Windows once (see `dev/install-recorderphone-protocol.ps1`).
+    // Requires registering `worktrace://` on Windows once (see `dev/install-worktrace-protocol.ps1`).
     // Uses PowerShell AUMID fallback so it works without installer packaging; the toast may show as coming from PowerShell.
     #[cfg(windows)]
     {
         use win_toast_notify::{Action, ActivationType, Duration, Scenario, WinToastNotify};
 
-        let deep_link = format!("recorderphone://review?block={}", due.id.as_str());
+        let deep_link = format!("worktrace://review?block={}", due.id.as_str());
         let skip_link = format!(
-            "recorderphone://review?action=skip&block={}",
+            "worktrace://review?action=skip&block={}",
             due.id.as_str()
         );
-        let pause_link = "recorderphone://review?action=pause&minutes=15".to_string();
+        let pause_link = "worktrace://review?action=pause&minutes=15".to_string();
         let _ = WinToastNotify::new()
             .set_open(deep_link.as_str())
             .set_duration(Duration::Long)

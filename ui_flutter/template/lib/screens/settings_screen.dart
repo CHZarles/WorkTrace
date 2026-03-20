@@ -281,7 +281,7 @@ class SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         title: Text("Update to ${latest.tag}?"),
         content: const Text(
-            "RecorderPhone will close, install the update, then restart."),
+            "WorkTrace will close, install the update, then restart."),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -1394,7 +1394,7 @@ class SettingsScreenState extends State<SettingsScreen> {
                                 const SizedBox(height: 2),
                                 Text(
                                   _agentRepoRoot == null
-                                      ? "Repo root not detected. This is OK in packaged mode.\nIf you're running from source, run UI from the repo or set env RECORDERPHONE_REPO_ROOT."
+                                      ? "Repo root not detected. This is OK in packaged mode.\nIf you're running from source, run UI from the repo or set env WORKTRACE_REPO_ROOT."
                                       : "Repo: $_agentRepoRoot",
                                   style:
                                       Theme.of(context).textTheme.labelMedium,
@@ -1477,7 +1477,7 @@ class SettingsScreenState extends State<SettingsScreen> {
                                         width: RecorderTokens.space1),
                                     Expanded(
                                       child: Text(
-                                        "Installer path: %LOCALAPPDATA%\\Programs\\RecorderPhone\nDatabase: %LOCALAPPDATA%\\RecorderPhone\\recorder-core.db",
+                                        "Installer path: %LOCALAPPDATA%\\Programs\\WorkTrace\nDatabase: %LOCALAPPDATA%\\WorkTrace\\recorder-core.db\nLegacy installs may still migrate from: %LOCALAPPDATA%\\RecorderPhone\\recorder-core.db",
                                         style: Theme.of(context)
                                             .textTheme
                                             .labelMedium,
@@ -1503,7 +1503,7 @@ class SettingsScreenState extends State<SettingsScreen> {
                                           ? "Error: $_startupError"
                                           : _startupEnabled == null
                                               ? "Checking…"
-                                              : "Launches RecorderPhone on login (minimized to tray).",
+                                              : "Launches WorkTrace on login (minimized to tray).",
                                     ),
                                     trailing: _startupBusy
                                         ? const SizedBox(

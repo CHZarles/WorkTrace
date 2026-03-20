@@ -53,14 +53,28 @@ class _IoTrayController with WindowListener implements TrayController {
     }
   }
 
-  String _defaultDataDirPath() {
+  String _userDataDirPath(String name) {
     final sep = Platform.pathSeparator;
     final base = (Platform.environment["LOCALAPPDATA"] ?? "").trim();
     final fallback = (Platform.environment["APPDATA"] ?? "").trim();
     final root = base.isNotEmpty
         ? base
         : (fallback.isNotEmpty ? fallback : Directory.systemTemp.path);
-    return "$root${sep}RecorderPhone";
+    return "$root${sep}$name";
+  }
+
+  String _defaultDataDirPath() {
+    final current = _userDataDirPath("WorkTrace");
+    if (Directory(current).existsSync()) return current;
+
+    final legacy = _userDataDirPath("RecorderPhone");
+    if (!Directory(legacy).existsSync()) return current;
+
+    try {
+      return Directory(legacy).renameSync(current).path;
+    } catch (_) {
+      return legacy;
+    }
   }
 
   Future<void> _openPathInExplorer(String path,
@@ -265,7 +279,7 @@ class _IoTrayController with WindowListener implements TrayController {
     final trackingLine = "Tracking: ${_status.trackingLabel}";
 
     await _menu.buildFrom([
-      MenuItemLabel(label: "RecorderPhone", enabled: false),
+      MenuItemLabel(label: "WorkTrace", enabled: false),
       MenuItemLabel(label: statusLine, enabled: false),
       MenuItemLabel(label: trackingLine, enabled: false),
       if (url.trim().isNotEmpty)
@@ -337,7 +351,7 @@ class _IoTrayController with WindowListener implements TrayController {
     windowManager.addListener(this);
 
     final iconPath = _trayIconPath();
-    await _tray.initSystemTray(title: "RecorderPhone", iconPath: iconPath);
+    await _tray.initSystemTray(title: "WorkTrace", iconPath: iconPath);
 
     _tray.registerSystemTrayEventHandler((eventName) {
       if (eventName == kSystemTrayEventClick ||

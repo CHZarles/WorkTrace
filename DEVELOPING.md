@@ -1,6 +1,8 @@
-# Developing RecorderPhone
+# Developing WorkTrace
 
 README 面向“普通用户”（如何下载/运行/更新）。本文件面向开发者。
+
+说明：产品对外名称和桌面深链现在都用 `WorkTrace` / `worktrace://`，但仓库目录和部分内部标识仍保留旧名字。
 
 ## 目录结构（开发视角）
 ```
