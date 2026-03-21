@@ -36,7 +36,6 @@ class BlockCard extends StatelessWidget {
     this.emphasisLabel,
     this.emphasisIcon,
     this.emphasisColor,
-    this.helperText,
     this.footer,
     this.highlight = false,
   });
@@ -51,7 +50,6 @@ class BlockCard extends StatelessWidget {
   final String? emphasisLabel;
   final IconData? emphasisIcon;
   final Color? emphasisColor;
-  final String? helperText;
   final Widget? footer;
   final bool highlight;
 
@@ -147,13 +145,11 @@ class BlockCard extends StatelessWidget {
     final (
       IconData statusIcon,
       Color statusColor,
-      String statusTip,
       String statusLabel,
     ) = skipped
         ? (
             Icons.skip_next,
             scheme.onSurfaceVariant,
-            "Skipped",
             "Skipped",
           )
         : hasReview
@@ -161,12 +157,10 @@ class BlockCard extends StatelessWidget {
                 Icons.check_circle,
                 scheme.primary,
                 "Reviewed",
-                "Reviewed",
               )
             : (
                 Icons.pending_actions_outlined,
                 scheme.onSurfaceVariant,
-                "Needs review",
                 "Needs review",
               );
 
@@ -293,16 +287,8 @@ class BlockCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: RecorderTokens.space2),
-                  RecorderTooltip(
-                    message: statusTip,
-                    child: Icon(
-                      statusIcon,
-                      size: 20,
-                      color: statusColor,
-                    ),
-                  ),
                   if (selectionMode) ...[
-                    const SizedBox(width: RecorderTokens.space1),
+                    const SizedBox(width: RecorderTokens.space2),
                     Checkbox(
                       value: selected,
                       onChanged: (v) => onSelectedChanged?.call(v ?? false),
@@ -316,7 +302,7 @@ class BlockCard extends StatelessWidget {
                   spacing: RecorderTokens.space2,
                   runSpacing: RecorderTokens.space2,
                   children: [
-                    for (final it in focusItems.take(4)) focusPill(it),
+                    for (final it in focusItems.take(3)) focusPill(it),
                   ],
                 )
               else
@@ -341,15 +327,6 @@ class BlockCard extends StatelessWidget {
                       ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                ),
-              ],
-              if ((helperText ?? "").trim().isNotEmpty) ...[
-                const SizedBox(height: RecorderTokens.space2),
-                Text(
-                  helperText!.trim(),
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
                 ),
               ],
               if (footer != null) ...[

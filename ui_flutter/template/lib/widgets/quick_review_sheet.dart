@@ -159,7 +159,6 @@ class _QuickReviewSheetState extends State<QuickReviewSheet> {
   Widget _sectionCard(
     BuildContext context, {
     required String title,
-    required String subtitle,
     required Widget child,
   }) {
     final scheme = Theme.of(context).colorScheme;
@@ -177,13 +176,6 @@ class _QuickReviewSheetState extends State<QuickReviewSheet> {
             title,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
                 ),
           ),
           const SizedBox(height: RecorderTokens.space3),
@@ -236,18 +228,10 @@ class _QuickReviewSheetState extends State<QuickReviewSheet> {
                       fontWeight: FontWeight.w700,
                     ),
               ),
-              const SizedBox(height: RecorderTokens.space1),
-              Text(
-                "Any note or tag marks this block as reviewed. Skip marks it handled without notes.",
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-              ),
               const SizedBox(height: RecorderTokens.space3),
               _sectionCard(
                 context,
-                title: "Block summary",
-                subtitle: "Fast context before you write.",
+                title: "Block",
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -277,11 +261,6 @@ class _QuickReviewSheetState extends State<QuickReviewSheet> {
                               ? scheme.outline.withValues(alpha: 0.14)
                               : scheme.primary.withValues(alpha: 0.16),
                         ),
-                        _summaryPill(
-                          context,
-                          icon: Icons.keyboard_command_key,
-                          label: "Ctrl+Enter to save",
-                        ),
                       ],
                     ),
                     if (top.isNotEmpty) ...[
@@ -297,9 +276,7 @@ class _QuickReviewSheetState extends State<QuickReviewSheet> {
               const SizedBox(height: RecorderTokens.space3),
               _sectionCard(
                 context,
-                title: "Review note",
-                subtitle:
-                    "Capture what happened, what came out, and what should happen next.",
+                title: "Review",
                 child: Column(
                   children: [
                     TextField(
@@ -337,8 +314,6 @@ class _QuickReviewSheetState extends State<QuickReviewSheet> {
               _sectionCard(
                 context,
                 title: "Tags",
-                subtitle:
-                    "Tags alone are enough to mark this block as reviewed.",
                 child: Wrap(
                   spacing: RecorderTokens.space2,
                   runSpacing: RecorderTokens.space2,

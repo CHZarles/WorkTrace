@@ -158,11 +158,6 @@ class SearchScreenState extends State<SearchScreen> {
     return s.clamp(60, 4 * 60 * 60);
   }
 
-  int _blockSecondsSafe() {
-    final s = _settings?.blockSeconds ?? _fallbackSettings().blockSeconds;
-    return s.clamp(60, 8 * 60 * 60);
-  }
-
   bool _isOptionalBlock(BlockSummary b) {
     if (_isReviewed(b)) return false;
     return b.totalSeconds < _reviewMinSecondsSafe();
@@ -554,8 +549,6 @@ class SearchScreenState extends State<SearchScreen> {
     switch (_reviewLens) {
       case _ReviewLens.queue:
         return buckets.queue.length;
-      case _ReviewLens.optional:
-        return buckets.optional.length;
       case _ReviewLens.reviewed:
         return buckets.reviewed.length;
       case _ReviewLens.skipped:
@@ -822,21 +815,6 @@ class SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  String _formatReviewUpdated(BlockSummary block) {
-    final raw = block.review?.updatedAt.trim() ?? "";
-    if (raw.isEmpty) return "";
-    final dt = DateTime.tryParse(raw)?.toLocal();
-    if (dt == null) return "";
-    final hh = dt.hour.toString().padLeft(2, "0");
-    final mm = dt.minute.toString().padLeft(2, "0");
-    if (_isSameCalendarDay(dt, DateTime.now())) {
-      return "Updated $hh:$mm";
-    }
-    final m = dt.month.toString().padLeft(2, "0");
-    final d = dt.day.toString().padLeft(2, "0");
-    return "Updated $m-$d $hh:$mm";
-  }
-
   Widget _reviewInfoPill(
     BuildContext context, {
     required IconData icon,
@@ -878,145 +856,6 @@ class SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _reviewOverviewCard(
-    BuildContext context, {
-    required _ReviewBuckets fullBuckets,
-    required int matchedCount,
-    required BlockSummary? dueBlock,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    final eligible = fullBuckets.eligibleCount;
-    final processed = fullBuckets.processedCount;
-    final coverage =
-        eligible <= 0 ? 1.0 : (processed / eligible).clamp(0.0, 1.0);
-    final queryActive = _queryController.text.trim().isNotEmpty;
-    final pills = Wrap(
-      spacing: RecorderTokens.space2,
-      runSpacing: RecorderTokens.space2,
-      children: [
-        _reviewInfoPill(
-          context,
-          icon: Icons.pending_actions_outlined,
-          label: "${fullBuckets.queue.length} in queue",
-          bgColor: scheme.primary.withValues(alpha: 0.10),
-          fgColor: scheme.primary,
-          borderColor: scheme.primary.withValues(alpha: 0.16),
-        ),
-        if (fullBuckets.optional.isNotEmpty)
-          _reviewInfoPill(
-            context,
-            icon: Icons.timer_outlined,
-            label: "${fullBuckets.optional.length} optional",
-          ),
-        _reviewInfoPill(
-          context,
-          icon: Icons.check_circle_outline,
-          label: "${fullBuckets.reviewed.length} reviewed",
-        ),
-        if (fullBuckets.skipped.isNotEmpty)
-          _reviewInfoPill(
-            context,
-            icon: Icons.skip_next_outlined,
-            label: "${fullBuckets.skipped.length} skipped",
-          ),
-        _reviewInfoPill(
-          context,
-          icon: Icons.tune_outlined,
-          label: "Min review ${formatDuration(_reviewMinSecondsSafe())}",
-        ),
-      ],
-    );
-
-    final titleBlock = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "Review",
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          _dateLocal(_day),
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-        ),
-      ],
-    );
-
-    return Container(
-      key: widget.tutorialHeaderKey,
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
-      ),
-      padding: const EdgeInsets.all(RecorderTokens.space3),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 760;
-              if (compact) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    titleBlock,
-                    const SizedBox(height: RecorderTokens.space2),
-                    pills,
-                  ],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: titleBlock),
-                  const SizedBox(width: RecorderTokens.space3),
-                  Flexible(
-                      child:
-                          Align(alignment: Alignment.topRight, child: pills)),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: RecorderTokens.space3),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              value: coverage,
-              minHeight: 10,
-              backgroundColor: scheme.surfaceContainerHigh,
-              valueColor: AlwaysStoppedAnimation<Color>(scheme.primary),
-            ),
-          ),
-          const SizedBox(height: RecorderTokens.space2),
-          Text(
-            eligible <= 0
-                ? "No queue-worthy blocks yet. Short blocks stay in Optional until they exceed the review threshold."
-                : "$processed / $eligible queue-worthy blocks already handled. Shorter blocks stay in Optional so the main queue stays cleaner.",
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-          ),
-          const SizedBox(height: RecorderTokens.space2),
-          Text(
-            queryActive
-                ? "Search is currently narrowing the page to $matchedCount matched blocks."
-                : dueBlock != null
-                    ? "The highlighted due block follows the same reminder rule as Today: long enough, still unreviewed, and already ready to look back on."
-                    : "Current block length is ${formatDuration(_blockSecondsSafe())}; review reminders only promote blocks that are long enough and ready.",
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _reviewControlsCard(
     BuildContext context, {
     required _ReviewBuckets matchedBuckets,
@@ -1031,21 +870,6 @@ class SearchScreenState extends State<SearchScreen> {
         .length;
     final selectedTotalCount = _selectedPendingBlockIds.length;
     final query = _queryController.text.trim();
-
-    String lensNote() {
-      switch (_reviewLens) {
-        case _ReviewLens.queue:
-          return "Queue follows the current min review duration (${formatDuration(_reviewMinSecondsSafe())}). Batch actions only apply here.";
-        case _ReviewLens.optional:
-          return "Optional blocks are shorter than ${formatDuration(_reviewMinSecondsSafe())}, so they stay out of the main review queue and due reminders.";
-        case _ReviewLens.reviewed:
-          return "Reviewed means the block already has notes or tags.";
-        case _ReviewLens.skipped:
-          return "Skipped blocks are treated as handled and will not show up in reminders.";
-        case _ReviewLens.all:
-          return "All blocks for the selected day, grouped by review state.";
-      }
-    }
 
     final searchField = TextField(
       controller: _queryController,
@@ -1080,7 +904,6 @@ class SearchScreenState extends State<SearchScreen> {
       child: SegmentedButton<_ReviewLens>(
         segments: const [
           ButtonSegment(value: _ReviewLens.queue, label: Text("Queue")),
-          ButtonSegment(value: _ReviewLens.optional, label: Text("Optional")),
           ButtonSegment(value: _ReviewLens.reviewed, label: Text("Reviewed")),
           ButtonSegment(value: _ReviewLens.skipped, label: Text("Skipped")),
           ButtonSegment(value: _ReviewLens.all, label: Text("All")),
@@ -1097,12 +920,16 @@ class SearchScreenState extends State<SearchScreen> {
       ),
     );
 
+    final metaParts = <String>["$visibleCount shown"];
+    if (query.isNotEmpty || matchedBuckets.total != _blocks.length) {
+      metaParts.add("${matchedBuckets.total}/${_blocks.length} matched");
+    }
+    if (_lastRefreshedAt != null) {
+      metaParts.add(_updatedAgoText(_lastRefreshedAt));
+    }
+
     final meta = Text(
-      [
-        "$visibleCount visible",
-        "${matchedBuckets.total}/${_blocks.length} matched",
-        if (_lastRefreshedAt != null) _updatedAgoText(_lastRefreshedAt),
-      ].join(" · "),
+      metaParts.join(" · "),
       style: Theme.of(context).textTheme.labelMedium?.copyWith(
             color: scheme.onSurfaceVariant,
           ),
@@ -1172,35 +999,49 @@ class SearchScreenState extends State<SearchScreen> {
           )
         : const SizedBox.shrink();
 
+    final titleBlock = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "Review",
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _dateLocal(_day),
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
+      ],
+    );
+
     final content = isWide
         ? Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: searchField),
+                  Expanded(child: titleBlock),
                   const SizedBox(width: RecorderTokens.space2),
                   dateButton,
                   const SizedBox(width: RecorderTokens.space2),
                   refreshButton,
                 ],
               ),
-              const SizedBox(height: RecorderTokens.space2),
+              const SizedBox(height: RecorderTokens.space3),
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: meta),
+                  Expanded(child: searchField),
                   const SizedBox(width: RecorderTokens.space3),
                   Flexible(child: filters),
                 ],
               ),
               const SizedBox(height: RecorderTokens.space2),
-              Text(
-                lensNote(),
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-              ),
+              meta,
               if (_reviewLens == _ReviewLens.queue) ...[
                 const SizedBox(height: RecorderTokens.space2),
                 batchBar,
@@ -1210,7 +1051,7 @@ class SearchScreenState extends State<SearchScreen> {
         : Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              searchField,
+              titleBlock,
               const SizedBox(height: RecorderTokens.space2),
               Wrap(
                 spacing: RecorderTokens.space2,
@@ -1221,16 +1062,11 @@ class SearchScreenState extends State<SearchScreen> {
                 ],
               ),
               const SizedBox(height: RecorderTokens.space2),
-              meta,
+              searchField,
               const SizedBox(height: RecorderTokens.space2),
               filters,
               const SizedBox(height: RecorderTokens.space2),
-              Text(
-                lensNote(),
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-              ),
+              meta,
               if (_reviewLens == _ReviewLens.queue) ...[
                 const SizedBox(height: RecorderTokens.space2),
                 batchBar,
@@ -1239,6 +1075,7 @@ class SearchScreenState extends State<SearchScreen> {
           );
 
     return Container(
+      key: widget.tutorialHeaderKey,
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(16),
@@ -1246,99 +1083,6 @@ class SearchScreenState extends State<SearchScreen> {
       ),
       padding: const EdgeInsets.all(RecorderTokens.space3),
       child: content,
-    );
-  }
-
-  Widget _dueSpotlightCard(BuildContext context, BlockSummary block) {
-    final scheme = Theme.of(context).colorScheme;
-    final title = "${formatHHMM(block.startTs)}–${formatHHMM(block.endTs)}";
-    final focus = (_previewFocusByBlockId[block.id] ?? const [])
-        .where((it) => !it.audio)
-        .take(3)
-        .map((it) => "${it.label} ${formatDuration(it.seconds)}")
-        .join(" · ");
-    final fallback = block.topItems
-        .take(3)
-        .map((it) => "${displayTopItemName(it)} ${formatDuration(it.seconds)}")
-        .join(" · ");
-    final summary = focus.isEmpty ? fallback : focus;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: scheme.primary.withValues(alpha: 0.20)),
-      ),
-      padding: const EdgeInsets.all(RecorderTokens.space3),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: RecorderTokens.space2,
-            runSpacing: RecorderTokens.space2,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _reviewInfoPill(
-                context,
-                icon: Icons.bolt_outlined,
-                label: "Due now",
-                bgColor: scheme.surface.withValues(alpha: 0.82),
-                fgColor: scheme.primary,
-                borderColor: scheme.primary.withValues(alpha: 0.18),
-              ),
-              _reviewInfoPill(
-                context,
-                icon: Icons.schedule_outlined,
-                label: "${formatDuration(block.totalSeconds)} · $title",
-                bgColor: scheme.surface.withValues(alpha: 0.82),
-              ),
-            ],
-          ),
-          const SizedBox(height: RecorderTokens.space2),
-          Text(
-            "This block is currently first in line for review.",
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: RecorderTokens.space1),
-          Text(
-            "It meets the current review rule and matches the due reminder logic from Today.",
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-          ),
-          if (summary.isNotEmpty) ...[
-            const SizedBox(height: RecorderTokens.space2),
-            Text(
-              summary,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ],
-          const SizedBox(height: RecorderTokens.space3),
-          Wrap(
-            spacing: RecorderTokens.space2,
-            runSpacing: RecorderTokens.space2,
-            children: [
-              FilledButton.icon(
-                onPressed: () => _openBlock(block, quick: true),
-                icon: const Icon(Icons.rate_review_outlined, size: 18),
-                label: const Text("Quick review"),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _openBlock(block),
-                icon: const Icon(Icons.open_in_new_outlined, size: 18),
-                label: const Text("Open details"),
-              ),
-              TextButton.icon(
-                onPressed: () => _skipBlock(block),
-                icon: const Icon(Icons.skip_next_outlined, size: 18),
-                label: const Text("Skip"),
-              ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 
@@ -1382,79 +1126,20 @@ class SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _optionalHintCard(BuildContext context, int count) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
-      ),
-      padding: const EdgeInsets.all(RecorderTokens.space3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.timer_outlined, color: scheme.onSurfaceVariant),
-          const SizedBox(width: RecorderTokens.space2),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "$count short block${count == 1 ? "" : "s"} parked in Optional",
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                const SizedBox(height: RecorderTokens.space1),
-                Text(
-                  "They are shorter than ${formatDuration(_reviewMinSecondsSafe())}, so they stay out of the main queue by default.",
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: RecorderTokens.space2),
-          OutlinedButton(
-            onPressed: () => setState(() => _reviewLens = _ReviewLens.optional),
-            child: const Text("Open Optional"),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _sectionHeader(
     BuildContext context, {
     required String title,
-    required String subtitle,
     required int count,
   }) {
-    final scheme = Theme.of(context).colorScheme;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-              ),
-            ],
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
           ),
         ),
         const SizedBox(width: RecorderTokens.space2),
@@ -1481,40 +1166,27 @@ class SearchScreenState extends State<SearchScreen> {
     String? emphasisLabel;
     IconData? emphasisIcon;
     Color? emphasisColor;
-    String? helperText;
 
     if (due) {
       emphasisLabel = "Due now";
       emphasisIcon = Icons.bolt_outlined;
       emphasisColor = scheme.primary;
-      helperText =
-          "This block currently matches the due reminder rule and is first in line for review.";
     } else if (optional) {
-      emphasisLabel = "Optional short block";
+      emphasisLabel = "Short block";
       emphasisIcon = Icons.timer_outlined;
       emphasisColor = scheme.tertiary;
-      helperText =
-          "Below the ${formatDuration(_reviewMinSecondsSafe())} threshold, so it stays outside the main queue by default.";
     } else if (skipped) {
       emphasisLabel = "Skipped";
       emphasisIcon = Icons.skip_next_outlined;
       emphasisColor = scheme.onSurfaceVariant;
-      final reason = (block.review?.skipReason ?? "").trim();
-      helperText = reason.isEmpty
-          ? "Marked as handled and removed from reminders."
-          : "Skip reason: $reason";
     } else if (reviewed) {
       emphasisLabel = "Reviewed";
       emphasisIcon = Icons.check_circle_outline;
       emphasisColor = scheme.primary;
-      helperText = _formatReviewUpdated(block);
-      if (helperText.isEmpty) helperText = "Review saved.";
     } else {
       emphasisLabel = "In queue";
       emphasisIcon = Icons.pending_actions_outlined;
       emphasisColor = scheme.primary;
-      helperText =
-          "Meets the ${formatDuration(_reviewMinSecondsSafe())} threshold and still needs a review.";
     }
 
     Widget? footer;
@@ -1590,7 +1262,6 @@ class SearchScreenState extends State<SearchScreen> {
       emphasisLabel: emphasisLabel,
       emphasisIcon: emphasisIcon,
       emphasisColor: emphasisColor,
-      helperText: helperText,
       footer: footer,
       highlight: due,
     );
@@ -1599,7 +1270,6 @@ class SearchScreenState extends State<SearchScreen> {
   List<Widget> _buildSectionChildren(
     BuildContext context, {
     required String title,
-    required String subtitle,
     required List<BlockSummary> blocks,
     required bool selectionEnabled,
   }) {
@@ -1608,7 +1278,6 @@ class SearchScreenState extends State<SearchScreen> {
       _sectionHeader(
         context,
         title: title,
-        subtitle: subtitle,
         count: blocks.length,
       ),
       const SizedBox(height: RecorderTokens.space2),
@@ -1627,21 +1296,18 @@ class SearchScreenState extends State<SearchScreen> {
   List<Widget> _buildBodySections(
     BuildContext context, {
     required _ReviewBuckets matchedBuckets,
-    required BlockSummary? dueBlock,
   }) {
     final queryActive = _queryController.text.trim().isNotEmpty;
     final children = <Widget>[];
 
     void addBlockSection(
       String title,
-      String subtitle,
       List<BlockSummary> blocks, {
       bool selectionEnabled = false,
     }) {
       final section = _buildSectionChildren(
         context,
         title: title,
-        subtitle: subtitle,
         blocks: blocks,
         selectionEnabled: selectionEnabled,
       );
@@ -1652,19 +1318,11 @@ class SearchScreenState extends State<SearchScreen> {
       children.addAll(section);
     }
 
-    final remainingQueue = matchedBuckets.queue
-        .where((b) => dueBlock == null || b.id != dueBlock.id)
-        .toList();
-
     switch (_reviewLens) {
       case _ReviewLens.queue:
-        if (dueBlock != null) {
-          children.add(_dueSpotlightCard(context, dueBlock));
-        }
         addBlockSection(
-          "Review queue",
-          "Blocks long enough to deserve a review right now.",
-          remainingQueue,
+          "Queue",
+          matchedBuckets.queue,
           selectionEnabled: _batchMode,
         );
         if (children.isEmpty) {
@@ -1673,43 +1331,17 @@ class SearchScreenState extends State<SearchScreen> {
               context,
               title: "Queue is clear",
               body: queryActive
-                  ? "No queue blocks match the current query."
+                  ? "No queue blocks match the current search."
                   : matchedBuckets.optional.isNotEmpty
-                      ? "Nothing in the main queue. Shorter blocks are parked in Optional so the page stays focused."
-                      : "No queue-worthy blocks for this day yet.",
-            ),
-          );
-        }
-        if (matchedBuckets.optional.isNotEmpty) {
-          if (children.isNotEmpty) {
-            children.add(const SizedBox(height: RecorderTokens.space4));
-          }
-          children
-              .add(_optionalHintCard(context, matchedBuckets.optional.length));
-        }
-        break;
-      case _ReviewLens.optional:
-        addBlockSection(
-          "Optional short blocks",
-          "Shorter than ${formatDuration(_reviewMinSecondsSafe())}, so they are kept out of the main queue.",
-          matchedBuckets.optional,
-        );
-        if (children.isEmpty) {
-          children.add(
-            _emptyStateCard(
-              context,
-              title: "No optional blocks",
-              body: queryActive
-                  ? "No short blocks match the current query."
-                  : "Every unreviewed block is already in the main queue.",
+                      ? "Queue is clear. Short blocks are still available under All."
+                      : "No queue blocks for this day.",
             ),
           );
         }
         break;
       case _ReviewLens.reviewed:
         addBlockSection(
-          "Reviewed blocks",
-          "Blocks that already contain review notes or tags.",
+          "Reviewed",
           matchedBuckets.reviewed,
         );
         if (children.isEmpty) {
@@ -1718,16 +1350,15 @@ class SearchScreenState extends State<SearchScreen> {
               context,
               title: "No reviewed blocks",
               body: queryActive
-                  ? "No reviewed blocks match the current query."
-                  : "Nothing has been reviewed for this day yet.",
+                  ? "No reviewed blocks match the current search."
+                  : "Nothing reviewed for this day.",
             ),
           );
         }
         break;
       case _ReviewLens.skipped:
         addBlockSection(
-          "Skipped blocks",
-          "Explicitly dismissed blocks that no longer show up in reminders.",
+          "Skipped",
           matchedBuckets.skipped,
         );
         if (children.isEmpty) {
@@ -1736,35 +1367,28 @@ class SearchScreenState extends State<SearchScreen> {
               context,
               title: "No skipped blocks",
               body: queryActive
-                  ? "No skipped blocks match the current query."
-                  : "No blocks were skipped for this day.",
+                  ? "No skipped blocks match the current search."
+                  : "Nothing skipped for this day.",
             ),
           );
         }
         break;
       case _ReviewLens.all:
-        if (dueBlock != null) {
-          children.add(_dueSpotlightCard(context, dueBlock));
-        }
         addBlockSection(
-          "Review queue",
-          "Queue-worthy blocks still waiting for a review.",
-          remainingQueue,
+          "Queue",
+          matchedBuckets.queue,
           selectionEnabled: false,
         );
         addBlockSection(
-          "Optional short blocks",
-          "Shorter than ${formatDuration(_reviewMinSecondsSafe())}, so they stay outside the main queue.",
+          "Short blocks",
           matchedBuckets.optional,
         );
         addBlockSection(
-          "Reviewed blocks",
-          "Blocks already covered by notes or tags.",
+          "Reviewed",
           matchedBuckets.reviewed,
         );
         addBlockSection(
-          "Skipped blocks",
-          "Dismissed blocks kept for history.",
+          "Skipped",
           matchedBuckets.skipped,
         );
         if (children.isEmpty) {
@@ -1836,19 +1460,10 @@ class SearchScreenState extends State<SearchScreen> {
 
     final matched = _matchedBlocks();
     final matchedBuckets = _bucketBlocks(matched);
-    final fullBuckets = _bucketBlocks(_blocks.reversed);
     final visibleCount = _visibleCountForLens(matchedBuckets);
-    BlockSummary? dueBlock;
-    for (final b in matchedBuckets.queue) {
-      if (_isDueBlock(b)) {
-        dueBlock = b;
-        break;
-      }
-    }
     final bodySections = _buildBodySections(
       context,
       matchedBuckets: matchedBuckets,
-      dueBlock: dueBlock,
     );
 
     return RefreshIndicator(
@@ -1856,13 +1471,6 @@ class SearchScreenState extends State<SearchScreen> {
       child: ListView(
         padding: const EdgeInsets.all(RecorderTokens.space4),
         children: [
-          _reviewOverviewCard(
-            context,
-            fullBuckets: fullBuckets,
-            matchedCount: matched.length,
-            dueBlock: dueBlock,
-          ),
-          const SizedBox(height: RecorderTokens.space3),
           _reviewControlsCard(
             context,
             matchedBuckets: matchedBuckets,
@@ -1891,10 +1499,6 @@ class _ReviewBuckets {
 
   int get total =>
       queue.length + optional.length + reviewed.length + skipped.length;
-
-  int get processedCount => reviewed.length + skipped.length;
-
-  int get eligibleCount => queue.length + processedCount;
 }
 
-enum _ReviewLens { queue, optional, reviewed, skipped, all }
+enum _ReviewLens { queue, reviewed, skipped, all }
