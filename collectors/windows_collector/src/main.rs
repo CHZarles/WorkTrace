@@ -345,7 +345,7 @@ fn ensure_single_instance_mutex() -> anyhow::Result<MutexGuard> {
         ) -> HANDLE;
     }
 
-    let name: Vec<u16> = "Local\\RecorderPhone.windows_collector"
+    let name: Vec<u16> = "Local\\WorkTrace.windows_collector"
         .encode_utf16()
         .chain(iter::once(0))
         .collect();

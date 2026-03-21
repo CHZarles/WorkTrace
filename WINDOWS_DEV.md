@@ -3,7 +3,7 @@
 你现在的工作方式是：**WSL 里改代码**，但很多“看效果”的动作（Flutter Windows、浏览器扩展、Windows 采集器）都发生在 **Windows**。  
 这份文档把“如何在 Windows 看到 WSL 的最新改动”讲清楚，并给出可复制的命令。
 
-说明：文档里的示例仓库路径和默认数据目录现在都用 `WorkTrace`；Flutter 工程目录 `recorderphone_ui/` 还保留旧标识。
+说明：文档里的示例仓库路径和默认数据目录现在都用 `WorkTrace`；Flutter 工程目录 `recorderphone_ui/` 仍是当前内部目录名。
 
 如果你只是想“像普通桌面软件一样用”，不想折腾开发环境：
 - 直接走 GitHub Releases 下载打包版：`RELEASING.md`
@@ -203,7 +203,7 @@ cd C:\src\WorkTrace
 powershell -ExecutionPolicy Bypass -File .\dev\install-worktrace-protocol.ps1
 ```
 
-如果脚本提示找不到 `recorderphone_ui.exe`：
+如果脚本提示找不到 WorkTrace 可执行文件：
 - 先运行一次 Windows UI（会生成 exe）：
   - `cd C:\src\WorkTrace\recorderphone_ui`
   - `flutter run -d windows`

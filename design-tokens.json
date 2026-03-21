@@ -1,6 +1,6 @@
 {
   "meta": {
-    "product": "RecorderPhone",
+    "product": "WorkTrace",
     "version": "0.1",
     "generatedAt": "2026-02-15",
     "notes": "Light/dark themes + shared tokens. Map to Material 3 / Fluent in platform code."
@@ -59,4 +59,3 @@
     }
   }
 }
-

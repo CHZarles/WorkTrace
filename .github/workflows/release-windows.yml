@@ -78,8 +78,8 @@ jobs:
           $tag = "${env:GITHUB_REF_NAME}"
           if ([string]::IsNullOrWhiteSpace($tag)) { $tag = "manual" }
 
-          $setupSrc = Join-Path $env:GITHUB_WORKSPACE "dist\\windows\\RecorderPhone-Setup.exe"
-          $setupDst = Join-Path $env:GITHUB_WORKSPACE ("dist\\windows\\RecorderPhone-" + $tag + "-windows-setup.exe")
+          $setupSrc = Join-Path $env:GITHUB_WORKSPACE "dist\\windows\\WorkTrace-Setup.exe"
+          $setupDst = Join-Path $env:GITHUB_WORKSPACE ("dist\\windows\\WorkTrace-" + $tag + "-windows-setup.exe")
           if (Test-Path $setupDst) { Remove-Item -Force $setupDst }
           Move-Item -Force $setupSrc $setupDst
 
@@ -90,14 +90,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: RecorderPhone-${{ github.ref_name }}-packaging-log
+          name: WorkTrace-${{ github.ref_name }}-packaging-log
           path: dist/windows/package-installer.log
           if-no-files-found: warn
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RecorderPhone-${{ github.ref_name }}-windows
+          name: WorkTrace-${{ github.ref_name }}-windows
           path: ${{ steps.package.outputs.SETUP_PATH }}
 
       - name: Check release notes

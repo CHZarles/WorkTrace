@@ -1,4 +1,4 @@
-<!-- RecorderPhone — WPF colors (Light theme) -->
+<!-- WorkTrace — WPF colors (Light theme) -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
@@ -63,4 +63,3 @@
   </Style>
 
 </ResourceDictionary>
-

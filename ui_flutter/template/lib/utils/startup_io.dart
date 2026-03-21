@@ -9,7 +9,6 @@ StartupController getStartupController() => _IoStartupController();
 class _IoStartupController implements StartupController {
   static const _runKey = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
   static const _valueName = "WorkTrace";
-  static const _legacyValueName = "RecorderPhone";
 
   @override
   bool get isAvailable => !kIsWeb && Platform.isWindows;
@@ -17,15 +16,14 @@ class _IoStartupController implements StartupController {
   @override
   Future<bool> isEnabled() async {
     if (!isAvailable) return false;
-    if (await _hasValue(_valueName)) return true;
-    if (await _hasValue(_legacyValueName)) return true;
-    return false;
+    return _hasValue(_valueName);
   }
 
   Future<bool> _hasValue(String name) async {
     if (!isAvailable) return false;
     try {
-      final res = await Process.run("reg", ["query", _runKey, "/v", name], runInShell: false);
+      final res = await Process.run("reg", ["query", _runKey, "/v", name],
+          runInShell: false);
       return res.exitCode == 0;
     } catch (_) {
       return false;
@@ -65,11 +63,9 @@ class _IoStartupController implements StartupController {
         final err = (res.stderr ?? "").toString().trim();
         throw Exception(err.isEmpty ? "reg_add_failed_${res.exitCode}" : err);
       }
-      await _deleteValue(_legacyValueName);
       return;
     }
 
     await _deleteValue(_valueName);
-    await _deleteValue(_legacyValueName);
   }
 }

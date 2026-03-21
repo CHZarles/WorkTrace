@@ -1,5 +1,5 @@
 <!--
-  RecorderPhone — WPF tokens (non-color)
+  WorkTrace — WPF tokens (non-color)
 
   Source of truth:
   - ../../../design-tokens.json (tokens.*)
@@ -51,4 +51,3 @@
   <Duration x:Key="MotionMedium">0:0:0.22</Duration>
 
 </ResourceDictionary>
-

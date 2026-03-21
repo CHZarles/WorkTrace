@@ -207,7 +207,7 @@ function Build-Installer {
     [Parameter(Mandatory = $true)][string]$OutputDir
   )
 
-  $issPath = Join-Path $RepoRoot "dev\\installer\\RecorderPhone.iss"
+  $issPath = Join-Path $RepoRoot "dev\\installer\\WorkTrace.iss"
   if (-not (Test-Path $issPath)) {
     throw "Installer script not found: $issPath"
   }
@@ -235,17 +235,6 @@ function Build-Installer {
   $setupPath = Join-Path $OutputDir "$outputBase.exe"
   if (-not (Test-Path $setupPath)) {
     throw "Installer output not found: $setupPath"
-  }
-
-  # Keep the new WorkTrace installer filename, but also emit the legacy
-  # filename expected by the current GitHub release workflow.
-  $legacySetupPath = Join-Path $OutputDir "RecorderPhone-Setup.exe"
-  if ($setupPath -ne $legacySetupPath) {
-    if (Test-Path $legacySetupPath) {
-      Remove-Item -Force $legacySetupPath
-    }
-    Copy-Item -Force $setupPath $legacySetupPath
-    Write-Host "[package] compatibility copy -> $legacySetupPath"
   }
 
   return $setupPath
@@ -358,7 +347,7 @@ if (-not $NoOverlayUI) {
 if (-not $NoBuild) {
   # Ensure builds don't fail due to locked target/release exes (dev agent / packaged agent still running).
   Write-Host "[package] stopping processes (pre-build)..."
-  Stop-ProcessesAndWait -Names @("WorkTrace", "RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector") -TimeoutSeconds 6
+  Stop-ProcessesAndWait -Names @("WorkTrace", "recorderphone_ui", "recorder_core", "windows_collector") -TimeoutSeconds 6
 
   Write-Host "[package] cargo build -p recorder_core --release"
   cargo build -p recorder_core --release
@@ -473,17 +462,15 @@ Write-BuildInfo -Dir $stagingDir -CoreExe $coreExe -CollectorExe $collectorExe
 # 2) Stop running packaged processes (so we can swap/overwrite).
 Write-Host "[package] stopping running processes..."
 Stop-ProcessByExecutablePath (Join-Path $OutDir "WorkTrace.exe")
-Stop-ProcessByExecutablePath (Join-Path $OutDir "RecorderPhone.exe")
 Stop-ProcessByExecutablePath (Join-Path $OutDir "recorderphone_ui.exe")
 Stop-ProcessByExecutablePath (Join-Path $OutDir "recorder_core.exe")
 Stop-ProcessByExecutablePath (Join-Path $OutDir "windows_collector.exe")
 # Also stop any remaining processes by image name (handles cases where ExecutablePath is not accessible).
 Stop-ProcessByNameBestEffort "WorkTrace"
-Stop-ProcessByNameBestEffort "RecorderPhone"
 Stop-ProcessByNameBestEffort "recorderphone_ui"
 Stop-ProcessByNameBestEffort "recorder_core"
 Stop-ProcessByNameBestEffort "windows_collector"
-Stop-ProcessesAndWait -Names @("WorkTrace", "RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector") -TimeoutSeconds 8
+Stop-ProcessesAndWait -Names @("WorkTrace", "recorderphone_ui", "recorder_core", "windows_collector") -TimeoutSeconds 8
 
 # 3) Swap staged folder into place (atomic move if possible; otherwise in-place update).
 try {

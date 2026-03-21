@@ -4,16 +4,16 @@ import "screens/app_shell.dart";
 import "theme/recorder_theme.dart";
 
 void main() {
-  runApp(const RecorderPhoneApp());
+  runApp(const WorkTraceApp());
 }
 
-class RecorderPhoneApp extends StatelessWidget {
-  const RecorderPhoneApp({super.key});
+class WorkTraceApp extends StatelessWidget {
+  const WorkTraceApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: "RecorderPhone",
+      title: "WorkTrace",
       theme: RecorderTheme.light(),
       darkTheme: RecorderTheme.dark(),
       themeMode: ThemeMode.system,

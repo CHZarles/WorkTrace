@@ -520,7 +520,6 @@ function Resolve-UiExe {
     $candidates += (Join-Path $Dir $Preferred)
   }
   $candidates += (Join-Path $Dir "WorkTrace.exe")
-  $candidates += (Join-Path $Dir "RecorderPhone.exe")
 
   foreach ($c in $candidates) {
     if (Test-Path $c) { return $c }
@@ -529,7 +528,7 @@ function Resolve-UiExe {
   $alts = Get-ChildItem -Path $Dir -Filter "*.exe" -File -ErrorAction SilentlyContinue `
     | Where-Object { $_.Name -ne "recorder_core.exe" -and $_.Name -ne "windows_collector.exe" } `
     | Sort-Object `
-        @{ Expression = { if ($_.Name -ieq "WorkTrace.exe") { 0 } elseif ($_.Name -ieq "RecorderPhone.exe") { 1 } elseif ($_.Name -ieq "recorderphone_ui.exe") { 2 } else { 3 } } }, `
+        @{ Expression = { if ($_.Name -ieq "WorkTrace.exe") { 0 } elseif ($_.Name -ieq "recorderphone_ui.exe") { 1 } else { 2 } } }, `
         @{ Expression = { $_.Name } }
   if ($alts -and $alts.Count -gt 0) { return $alts[0].FullName }
   return ""
@@ -574,8 +573,8 @@ try {
     Write-Log "fallback exe: $fallbackExe"
   }
 
-  $names = @("WorkTrace", "RecorderPhone", "recorderphone_ui", "recorder_core", "windows_collector")
-  $images = @("WorkTrace.exe", "RecorderPhone.exe", "recorderphone_ui.exe", "recorder_core.exe", "windows_collector.exe")
+  $names = @("WorkTrace", "recorderphone_ui", "recorder_core", "windows_collector")
+  $images = @("WorkTrace.exe", "recorderphone_ui.exe", "recorder_core.exe", "windows_collector.exe")
   for ($i = 0; $i -lt 3; $i++) {
     Stop-ByName -Names $names
     Stop-ByImage -Images $images

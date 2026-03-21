@@ -1,5 +1,5 @@
 <!--
-  RecorderPhone — WinUI 3 ResourceDictionary template
+  WorkTrace — WinUI 3 ResourceDictionary template
 
   Source of truth:
   - ../../../design-tokens.json
@@ -153,4 +153,3 @@
   </Style>
 
 </ResourceDictionary>
-

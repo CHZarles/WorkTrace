@@ -3,7 +3,7 @@
 这部分只提供 **UI 模板代码**（含 tokens 主题映射 + 调用 Core API 的页面骨架）。  
 由于当前环境未安装 Flutter SDK，仓库里不包含 `flutter create` 生成的 platform 工程文件。
 
-说明：文档里的示例仓库路径和默认数据目录现在都用 `WorkTrace`；Flutter 工程目录 `recorderphone_ui/` 暂时没改。
+说明：文档里的示例仓库路径和默认数据目录现在都用 `WorkTrace`；Flutter 工程目录 `recorderphone_ui/` 仍是当前内部目录名。
 
 ## Windows 前置条件（跑桌面端必需）
 - 开启“开发者模式”（symlink 支持）：设置 → 隐私和安全性 → 开发者选项 → 开发人员模式
@@ -61,7 +61,8 @@ powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -InstallProto
 ```
 
 约定：
-- 把 `recorder_core.exe` 与 `windows_collector.exe` 放到 UI exe（`WorkTrace.exe` / `recorderphone_ui.exe`）同目录，或放到同目录下的 `bin/`。
+- 把 `recorder_core.exe` 与 `windows_collector.exe` 放到 UI exe 同目录，或放到同目录下的 `bin/`。
+  打包后的 UI 入口通常是 `WorkTrace.exe`；开发工程的 Flutter runner 输出仍可能是 `recorderphone_ui.exe`。
 - UI 会用 `Server URL` 的 host/port（默认 `http://127.0.0.1:17600`）启动 Core，并把数据库写到：
   - `%LOCALAPPDATA%\\WorkTrace\\recorder-core.db`（以及 `%LOCALAPPDATA%\\WorkTrace\\agent-pids.json`）
 

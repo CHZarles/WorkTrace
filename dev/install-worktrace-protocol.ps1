@@ -9,17 +9,38 @@ Set-Location $RepoRoot
 
 $protocol = "worktrace"
 $keyPath = "HKCU:\\Software\\Classes\\$protocol"
-$legacyKeyPath = "HKCU:\\Software\\Classes\\recorderphone"
+
+function Resolve-AppExeInDir {
+  param([Parameter(Mandatory = $true)][string]$Dir)
+  if (-not (Test-Path $Dir)) { return "" }
+
+  $exe = Get-ChildItem -Path $Dir -Filter "*.exe" -File -ErrorAction SilentlyContinue `
+    | Where-Object { $_.Name -ne "recorder_core.exe" -and $_.Name -ne "windows_collector.exe" } `
+    | Sort-Object @{ Expression = { if ($_.Name -ieq "WorkTrace.exe") { 0 } else { 1 } } }, @{ Expression = { $_.Name } } `
+    | Select-Object -First 1
+
+  if ($null -eq $exe) { return "" }
+  return $exe.FullName
+}
 
 function Resolve-DefaultExePath {
   $candidates = @(
-    (Join-Path $RepoRoot "dist\\windows\\WorkTrace\\WorkTrace.exe"),
-    (Join-Path $RepoRoot "dist\\windows\\WorkTrace\\recorderphone_ui.exe"),
-    (Join-Path $RepoRoot "recorderphone_ui\\build\\windows\\x64\\runner\\Debug\\recorderphone_ui.exe"),
-    (Join-Path $RepoRoot "recorderphone_ui\\build\\windows\\x64\\runner\\Release\\recorderphone_ui.exe")
+    (Join-Path $RepoRoot "dist\\windows\\WorkTrace\\WorkTrace.exe")
   )
   foreach ($p in $candidates) {
     if (Test-Path $p) { return (Resolve-Path $p).Path }
+  }
+
+  $dirs = @(
+    (Join-Path $RepoRoot "dist\\windows\\WorkTrace"),
+    (Join-Path $RepoRoot "recorderphone_ui\\build\\windows\\x64\\runner\\Debug"),
+    (Join-Path $RepoRoot "recorderphone_ui\\build\\windows\\x64\\runner\\Release")
+  )
+  foreach ($dir in $dirs) {
+    $exe = Resolve-AppExeInDir -Dir $dir
+    if (-not [string]::IsNullOrWhiteSpace($exe)) {
+      return (Resolve-Path $exe).Path
+    }
   }
   return ""
 }
@@ -41,11 +62,11 @@ if ([string]::IsNullOrWhiteSpace($ExePath)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($ExePath) -or -not (Test-Path $ExePath)) {
-  Write-Host "[protocol] WorkTrace.exe / recorderphone_ui.exe not found."
+  Write-Host "[protocol] WorkTrace executable not found."
   Write-Host "  Expected one of:"
   Write-Host "    $RepoRoot\\dist\\windows\\WorkTrace\\WorkTrace.exe"
-  Write-Host "    $RepoRoot\\recorderphone_ui\\build\\windows\\x64\\runner\\Debug\\recorderphone_ui.exe"
-  Write-Host "    $RepoRoot\\recorderphone_ui\\build\\windows\\x64\\runner\\Release\\recorderphone_ui.exe"
+  Write-Host "    $RepoRoot\\recorderphone_ui\\build\\windows\\x64\\runner\\Debug\\*.exe"
+  Write-Host "    $RepoRoot\\recorderphone_ui\\build\\windows\\x64\\runner\\Release\\*.exe"
   Write-Host ""
   Write-Host "Fix:"
   Write-Host "  1) Build/run the Flutter Windows app once:"
@@ -59,15 +80,6 @@ if ([string]::IsNullOrWhiteSpace($ExePath) -or -not (Test-Path $ExePath)) {
 }
 
 Write-Host "[protocol] Installing ${protocol}:// handler -> $ExePath"
-
-if (Test-Path $legacyKeyPath) {
-  try {
-    Remove-Item -Path $legacyKeyPath -Recurse -Force
-    Write-Host "[protocol] Removed legacy recorderphone:// handler."
-  } catch {
-    Write-Host "[protocol] Could not remove legacy recorderphone:// handler; continuing."
-  }
-}
 
 New-Item -Path $keyPath -Force | Out-Null
 New-ItemProperty -Path $keyPath -Name "(default)" -Value "URL:WorkTrace Protocol" -PropertyType String -Force | Out-Null

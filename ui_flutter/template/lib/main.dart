@@ -28,7 +28,7 @@ Future<void> main() async {
   }
 
   runApp(
-    RecorderPhoneApp(
+    WorkTraceApp(
       initialDeepLink: deepLink,
       startMinimized: startMinimized,
       externalCommands: single.messages,
@@ -37,8 +37,8 @@ Future<void> main() async {
   );
 }
 
-class RecorderPhoneApp extends StatelessWidget {
-  const RecorderPhoneApp({
+class WorkTraceApp extends StatelessWidget {
+  const WorkTraceApp({
     super.key,
     this.initialDeepLink,
     this.startMinimized = false,

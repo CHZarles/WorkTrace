@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://recorderphone.local/schemas/ingest-event.schema.json",
-  "title": "RecorderPhone Ingest Event (Core)",
+  "title": "WorkTrace Ingest Event (Core)",
   "type": "object",
   "additionalProperties": true,
   "required": ["v", "ts", "source", "event"],
