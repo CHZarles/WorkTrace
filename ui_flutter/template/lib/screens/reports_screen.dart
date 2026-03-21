@@ -2,9 +2,7 @@ import "dart:async";
 import "dart:convert";
 
 import "package:flutter/material.dart";
-import "package:flutter_markdown/flutter_markdown.dart";
 import "package:flutter/services.dart";
-import "package:markdown/markdown.dart" as md;
 
 import "../api/core_client.dart";
 import "../theme/tokens.dart";
@@ -101,7 +99,6 @@ class ReportsScreenState extends State<ReportsScreen> {
       _ReportSettingsSection.connection;
   _ReportSettingsLayer _reportSettingsLayer = _ReportSettingsLayer.basic;
   DateTime _todoAnchorDay = DateTime.now();
-  bool _plannerShowInsights = false;
 
   bool _enabled = false;
   bool _dailyEnabled = false;
@@ -153,6 +150,9 @@ class ReportsScreenState extends State<ReportsScreen> {
     _outputDir = TextEditingController();
     _todoSearch = TextEditingController();
     _todoAnchorDay = _normalizeDay(DateTime.now());
+    if (widget.plannerMode) {
+      _plannerDimension = _PlannerDimension.calendar;
+    }
     _calendarTicker = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted || !widget.isActive) return;
       _checkTodoReminders();
@@ -596,35 +596,126 @@ class ReportsScreenState extends State<ReportsScreen> {
         _todos.where((t) => !t.done && _todoHasSchedule(t)).length;
     final overdue = _todos.where(_todoIsOverdue).length;
 
-    Widget stat(String label, String value, {Color? tint}) {
-      final color = tint ?? scheme.onSurfaceVariant;
+    Widget stat({
+      required String label,
+      required String value,
+      required IconData icon,
+      Color? tint,
+      Color? fill,
+    }) {
+      final color = tint ?? scheme.onSurface;
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        constraints: const BoxConstraints(minWidth: 132),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
+          color: fill ?? scheme.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: scheme.outline.withValues(alpha: 0.12)),
         ),
-        child: Text(
-          "$label $value",
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(height: 10),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
         ),
       );
     }
 
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: 10,
+      runSpacing: 10,
       children: [
-        stat("Open", "$open"),
-        stat("Today", "$today", tint: scheme.primary),
-        stat("Scheduled", "$scheduled"),
-        stat("Overdue", "$overdue", tint: overdue > 0 ? scheme.error : null),
+        stat(
+          label: "Open tasks",
+          value: "$open",
+          icon: Icons.inbox_outlined,
+        ),
+        stat(
+          label: "Today",
+          value: "$today",
+          icon: Icons.today_outlined,
+          tint: scheme.primary,
+          fill: scheme.primaryContainer.withValues(alpha: 0.34),
+        ),
+        stat(
+          label: "Scheduled",
+          value: "$scheduled",
+          icon: Icons.schedule_outlined,
+        ),
+        stat(
+          label: "Overdue",
+          value: "$overdue",
+          icon: Icons.warning_amber_rounded,
+          tint: overdue > 0 ? scheme.error : scheme.onSurface,
+          fill: overdue > 0
+              ? scheme.errorContainer.withValues(alpha: 0.42)
+              : scheme.surfaceContainerLowest,
+        ),
       ],
     );
+  }
+
+  Color _todoAccent(BuildContext context, ReportTodo todo) {
+    final scheme = Theme.of(context).colorScheme;
+    if (todo.done) return scheme.outline;
+    if (_todoIsOverdue(todo)) return scheme.error;
+    if (_todoHasSchedule(todo)) return scheme.primary;
+    return scheme.tertiary;
+  }
+
+  Color _todoFill(BuildContext context, ReportTodo todo) {
+    final scheme = Theme.of(context).colorScheme;
+    if (todo.done) {
+      return scheme.surfaceContainerLow;
+    }
+    if (_todoIsOverdue(todo)) {
+      return scheme.errorContainer.withValues(alpha: 0.54);
+    }
+    if (_todoHasSchedule(todo)) {
+      return scheme.primaryContainer.withValues(alpha: 0.46);
+    }
+    return scheme.surface;
+  }
+
+  String _todoSummaryLine(ReportTodo todo, {bool includeDay = true}) {
+    final parts = <String>[];
+    if (includeDay) {
+      if (_todoIsToday(todo)) {
+        parts.add("Today");
+      } else {
+        parts.add(_todoDayTitle(_todoDay(todo)));
+      }
+    }
+    parts.add(
+        _todoHasSchedule(todo) ? _todoScheduleRangeLabel(todo) : "No time");
+    final reminder = _todoReminderLocal(todo);
+    if (reminder != null) {
+      parts.add("Reminder ${_hhmmFromDateTime(reminder)}");
+    }
+    return parts.join(" · ");
+  }
+
+  String _todoStatusLabel(ReportTodo todo) {
+    if (todo.done) return "Done";
+    if (_todoIsOverdue(todo)) return "Overdue";
+    if (_todoIsToday(todo)) return "Today";
+    if (_todoHasSchedule(todo)) return "Scheduled";
+    return "Backlog";
   }
 
   bool _todoHasReminder(ReportTodo todo) {
@@ -968,32 +1059,6 @@ class ReportsScreenState extends State<ReportsScreen> {
     }
     final month = DateTime(_todoAnchorDay.year, _todoAnchorDay.month, 1);
     return "${month.year}-${month.month.toString().padLeft(2, "0")}";
-  }
-
-  String _todoRangeLoadText() {
-    if (_todoCalendarView == _TodoCalendarView.week) {
-      final start = _startOfWeekMonday(_todoAnchorDay);
-      final end = start.add(const Duration(days: 7));
-      final scheduled = _todos.where((todo) {
-        if (!_todoHasSchedule(todo) || todo.done) return false;
-        final day = _todoDay(todo);
-        return !day.isBefore(start) && day.isBefore(end);
-      }).toList();
-      final totalMinutes = scheduled.fold<int>(
-        0,
-        (sum, todo) => sum + _todoDurationMinutes(todo),
-      );
-      final totalHours = (totalMinutes / 60).toStringAsFixed(1);
-      return "${scheduled.length} scheduled blocks · $totalHours h";
-    }
-    final month = DateTime(_todoAnchorDay.year, _todoAnchorDay.month, 1);
-    final next = DateTime(_todoAnchorDay.year, _todoAnchorDay.month + 1, 1);
-    final openCount = _todos.where((todo) {
-      if (todo.done) return false;
-      final day = _todoDay(todo);
-      return !day.isBefore(month) && day.isBefore(next);
-    }).length;
-    return "$openCount open TODO in this month";
   }
 
   void _shiftTodoRange(int step) {
@@ -1551,16 +1616,12 @@ class ReportsScreenState extends State<ReportsScreen> {
 
   Widget _todoChip(BuildContext context, ReportTodo todo) {
     final scheme = Theme.of(context).colorScheme;
-    final hasSchedule = _todoHasSchedule(todo);
-    final startMinute = _todoStartMinute(todo);
-    final hh = (startMinute ~/ 60).toString().padLeft(2, "0");
-    final mm = (startMinute % 60).toString().padLeft(2, "0");
-    final dueDay = _todoDay(todo);
-    final reminderLocal = _todoReminderLocal(todo);
-    final scheduleLabel =
-        hasSchedule ? "$hh:$mm · ${_todoDurationMinutes(todo)}m" : "No time";
-    final overdue = _todoIsOverdue(todo);
-    final isToday = _todoIsToday(todo);
+    final accent = _todoAccent(context, todo);
+    final fill = _todoFill(context, todo);
+    final status = _todoStatusLabel(todo);
+    final muted = todo.done
+        ? scheme.onSurfaceVariant
+        : scheme.onSurfaceVariant.withValues(alpha: 0.92);
 
     Future<void> onAction(String action) async {
       switch (action) {
@@ -1576,201 +1637,133 @@ class ReportsScreenState extends State<ReportsScreen> {
       }
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: todo.done
-            ? scheme.surfaceContainerHighest
-            : scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: overdue
-              ? scheme.error.withValues(alpha: 0.45)
-              : scheme.outline.withValues(alpha: 0.18),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 4, right: 10),
-            child: Icon(
-              todo.done
-                  ? Icons.check_circle_outline
-                  : overdue
-                      ? Icons.warning_amber_rounded
-                      : Icons.radio_button_unchecked,
-              size: 18,
-              color: overdue ? scheme.error : scheme.onSurfaceVariant,
-            ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: _todoBusy ? null : () => _openTodoEditor(todo: todo),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: accent.withValues(alpha: 0.14)),
           ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  todo.content,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        decoration: todo.done
-                            ? TextDecoration.lineThrough
-                            : TextDecoration.none,
-                      ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  hasSchedule ? "Scheduled · $scheduleLabel" : "Unscheduled",
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: [
-                    _todoMetaPill(
-                      context,
-                      icon: Icons.calendar_today_outlined,
-                      label: _dateLocal(dueDay),
-                    ),
-                    if (isToday)
-                      _todoMetaPill(
-                        context,
-                        icon: Icons.today,
-                        label: "Today",
-                        bgColor:
-                            scheme.primaryContainer.withValues(alpha: 0.70),
-                        fgColor: scheme.primary,
-                        borderColor: scheme.primary.withValues(alpha: 0.24),
-                      ),
-                    _todoMetaPill(
-                      context,
-                      icon: hasSchedule
-                          ? Icons.schedule_outlined
-                          : Icons.pending_actions_outlined,
-                      label: hasSchedule ? scheduleLabel : "No time",
-                    ),
-                    if (reminderLocal != null)
-                      _todoMetaPill(
-                        context,
-                        icon: Icons.alarm_outlined,
-                        label: _todoReminderLabel(todo),
-                      ),
-                    if (overdue)
-                      _todoMetaPill(
-                        context,
-                        icon: Icons.error_outline,
-                        label: "Overdue",
-                        isWarning: true,
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               IconButton(
                 tooltip: todo.done ? "Mark open" : "Mark done",
                 onPressed: _todoBusy ? null : () => onAction("toggle"),
                 icon: Icon(
-                  todo.done ? Icons.check_circle : Icons.check_circle_outline,
-                  size: 20,
+                  todo.done ? Icons.check_circle : Icons.radio_button_unchecked,
+                  size: 22,
+                  color: accent,
                 ),
                 visualDensity: VisualDensity.compact,
               ),
-              PopupMenuButton<String>(
-                tooltip: "More",
-                onSelected: _todoBusy ? null : onAction,
-                itemBuilder: (context) => [
-                  const PopupMenuItem<String>(
-                    value: "edit",
-                    child: ListTile(
-                      dense: true,
-                      leading: Icon(Icons.edit_outlined, size: 18),
-                      title: Text("Edit"),
-                    ),
-                  ),
-                  PopupMenuItem<String>(
-                    value: "toggle",
-                    child: ListTile(
-                      dense: true,
-                      leading: Icon(
-                        todo.done
-                            ? Icons.check_circle_outline
-                            : Icons.radio_button_unchecked,
-                        size: 18,
+              const SizedBox(width: 4),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        todo.content,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              decoration: todo.done
+                                  ? TextDecoration.lineThrough
+                                  : TextDecoration.none,
+                            ),
                       ),
-                      title: Text(todo.done ? "Mark open" : "Mark done"),
+                      const SizedBox(height: 4),
+                      Text(
+                        _todoSummaryLine(todo),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: muted,
+                                ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      status,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: accent,
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
                   ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem<String>(
-                    value: "delete",
-                    child: ListTile(
-                      dense: true,
-                      leading: Icon(Icons.delete_outline, size: 18),
-                      title: Text("Delete"),
+                  const SizedBox(height: 2),
+                  PopupMenuButton<String>(
+                    tooltip: "More",
+                    onSelected: _todoBusy ? null : onAction,
+                    itemBuilder: (context) => [
+                      const PopupMenuItem<String>(
+                        value: "edit",
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.edit_outlined, size: 18),
+                          title: Text("Edit"),
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: "toggle",
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(
+                            todo.done
+                                ? Icons.check_circle_outline
+                                : Icons.radio_button_unchecked,
+                            size: 18,
+                          ),
+                          title: Text(todo.done ? "Mark open" : "Mark done"),
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem<String>(
+                        value: "delete",
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.delete_outline, size: 18),
+                          title: Text("Delete"),
+                        ),
+                      ),
+                    ],
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Icon(
+                        Icons.more_horiz,
+                        size: 18,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ],
-                child: const Padding(
-                  padding: EdgeInsets.all(6),
-                  child: Icon(Icons.more_horiz, size: 18),
-                ),
               ),
             ],
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _todoMetaPill(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    bool isWarning = false,
-    Color? bgColor,
-    Color? fgColor,
-    Color? borderColor,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    final resolvedBg = bgColor ??
-        (isWarning
-            ? scheme.errorContainer.withValues(alpha: 0.72)
-            : scheme.surface.withValues(alpha: 0.85));
-    final resolvedFg = fgColor ??
-        (isWarning ? scheme.onErrorContainer : scheme.onSurfaceVariant);
-    final resolvedBorder = borderColor ??
-        (isWarning
-            ? scheme.error.withValues(alpha: 0.35)
-            : scheme.outline.withValues(alpha: 0.15));
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: resolvedBg,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: resolvedBorder),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: resolvedFg),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: resolvedFg,
-                ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1875,9 +1868,11 @@ class ReportsScreenState extends State<ReportsScreen> {
         .where((todo) => !todo.done && _todoReminderLocal(todo) != null)
         .length;
     final selectedDayCount = _todosForDayPanel(_todoAnchorDay).length;
-    final viewLabel = _todoCalendarView == _TodoCalendarView.week
-        ? "Week canvas"
-        : "Month board";
+    final viewLabel =
+        _todoCalendarView == _TodoCalendarView.week ? "Week" : "Month";
+    final hint = _todoCalendarView == _TodoCalendarView.week
+        ? "Click empty time to create. Drag blocks to reschedule."
+        : "Click a day to select it. Click the selected day again to open week.";
 
     return Container(
       decoration: BoxDecoration(
@@ -1896,14 +1891,29 @@ class ReportsScreenState extends State<ReportsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
+                    "$viewLabel view",
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
                     _todoRangeLabel(),
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _todoRangeLoadText(),
+                    "${_todoDayTitle(_todoAnchorDay)} · $selectedDayCount task${selectedDayCount == 1 ? "" : "s"}",
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    hint,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
@@ -1916,29 +1926,18 @@ class ReportsScreenState extends State<ReportsScreen> {
                 children: [
                   _plannerInfoPill(
                     context,
-                    icon: _todoCalendarView == _TodoCalendarView.week
-                        ? Icons.view_week_outlined
-                        : Icons.calendar_month_outlined,
-                    label: viewLabel,
-                    bgColor: scheme.primary.withValues(alpha: 0.10),
-                    fgColor: scheme.primary,
-                    borderColor: scheme.primary.withValues(alpha: 0.20),
-                  ),
-                  _plannerInfoPill(
-                    context,
-                    icon: Icons.adjust_outlined,
-                    label:
-                        "${_todoDayTitle(_todoAnchorDay)} · $selectedDayCount item${selectedDayCount == 1 ? "" : "s"}",
-                  ),
-                  _plannerInfoPill(
-                    context,
                     icon: Icons.inbox_outlined,
                     label: "$openCount open",
                   ),
                   _plannerInfoPill(
                     context,
                     icon: Icons.schedule_outlined,
-                    label: "$scheduledCount scheduled",
+                    label: "$scheduledCount timed",
+                  ),
+                  _plannerInfoPill(
+                    context,
+                    icon: Icons.adjust_outlined,
+                    label: "$selectedDayCount on selected day",
                   ),
                   if (reminderCount > 0)
                     _plannerInfoPill(
@@ -1982,23 +1981,10 @@ class ReportsScreenState extends State<ReportsScreen> {
 
   Widget _calendarAgendaRow(BuildContext context, ReportTodo todo) {
     final scheme = Theme.of(context).colorScheme;
-    final overdue = _todoIsOverdue(todo);
-    final hasSchedule = _todoHasSchedule(todo);
-    final reminder = _todoReminderLocal(todo);
-    final accent = overdue
-        ? scheme.error
-        : todo.done
-            ? scheme.outline
-            : hasSchedule
-                ? scheme.primary
-                : scheme.tertiary;
-    final fill = todo.done
-        ? scheme.surfaceContainerHighest
-        : overdue
-            ? scheme.errorContainer.withValues(alpha: 0.82)
-            : hasSchedule
-                ? scheme.primaryContainer.withValues(alpha: 0.72)
-                : scheme.tertiaryContainer.withValues(alpha: 0.72);
+    final accent = _todoAccent(context, todo);
+    final fill = _todoFill(context, todo);
+    final timeLabel =
+        _todoHasSchedule(todo) ? _todoScheduleRangeLabel(todo) : "Anytime";
 
     return RecorderTooltip(
       message: _todoCalendarTooltip(todo),
@@ -2012,73 +1998,41 @@ class ReportsScreenState extends State<ReportsScreen> {
             onTap: _todoBusy ? null : () => _openTodoEditor(todo: todo),
             child: Container(
               margin: const EdgeInsets.only(bottom: RecorderTokens.space2),
-              padding: const EdgeInsets.symmetric(
-                horizontal: RecorderTokens.space2,
-                vertical: RecorderTokens.space2,
-              ),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: fill,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: accent.withValues(alpha: 0.20)),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: accent.withValues(alpha: 0.16)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: 4,
-                    height: 40,
+                    width: 68,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
-                      color: accent,
-                      borderRadius: BorderRadius.circular(999),
+                      color: scheme.surface.withValues(alpha: 0.84),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      timeLabel,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: accent,
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
                   ),
-                  const SizedBox(width: RecorderTokens.space2),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            _plannerInfoPill(
-                              context,
-                              icon: hasSchedule
-                                  ? Icons.schedule_outlined
-                                  : Icons.pending_actions_outlined,
-                              label: hasSchedule
-                                  ? "${_todoScheduleRangeLabel(todo)} · ${_todoDurationMinutes(todo)}m"
-                                  : "No time",
-                              compact: true,
-                              bgColor: scheme.surface.withValues(alpha: 0.82),
-                              fgColor: accent,
-                              borderColor: accent.withValues(alpha: 0.18),
-                            ),
-                            if (reminder != null)
-                              _plannerInfoPill(
-                                context,
-                                icon: Icons.alarm_outlined,
-                                label: _hhmmFromDateTime(reminder),
-                                compact: true,
-                              ),
-                            if (overdue)
-                              _plannerInfoPill(
-                                context,
-                                icon: Icons.warning_amber_rounded,
-                                label: "Overdue",
-                                compact: true,
-                                bgColor: scheme.errorContainer,
-                                fgColor: scheme.error,
-                                borderColor:
-                                    scheme.error.withValues(alpha: 0.22),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
                         Text(
                           todo.content,
-                          maxLines: 2,
+                          maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                           style:
                               Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -2088,21 +2042,56 @@ class ReportsScreenState extends State<ReportsScreen> {
                                         : TextDecoration.none,
                                   ),
                         ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _todoSummaryLine(todo, includeDay: false),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                        ),
                       ],
                     ),
                   ),
                   const SizedBox(width: RecorderTokens.space1),
-                  IconButton(
-                    tooltip: todo.done ? "Mark open" : "Mark done",
-                    onPressed:
-                        _todoBusy ? null : () => _toggleTodo(todo, !todo.done),
-                    icon: Icon(
-                      todo.done
-                          ? Icons.check_circle
-                          : Icons.check_circle_outline,
-                      size: 20,
-                    ),
-                    visualDensity: VisualDensity.compact,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          _todoStatusLabel(todo),
+                          style:
+                              Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: accent,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      IconButton(
+                        tooltip: todo.done ? "Mark open" : "Mark done",
+                        onPressed: _todoBusy
+                            ? null
+                            : () => _toggleTodo(todo, !todo.done),
+                        icon: Icon(
+                          todo.done
+                              ? Icons.check_circle
+                              : Icons.check_circle_outline,
+                          size: 20,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -2141,7 +2130,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Focus day",
+                    "Agenda",
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -2149,7 +2138,14 @@ class ReportsScreenState extends State<ReportsScreen> {
                   const SizedBox(height: 4),
                   Text(
                     _todoDayTitle(day),
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "$openCount open · $scheduledCount timed${reminderCount > 0 ? " · $reminderCount reminder" : ""}",
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
                   ),
@@ -2164,7 +2160,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                               _todoCalendarView == _TodoCalendarView.week,
                         ),
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text("Add for this day"),
+                label: const Text("Add task"),
               );
               if (compact) {
                 return Column(
@@ -2184,29 +2180,6 @@ class ReportsScreenState extends State<ReportsScreen> {
               );
             },
           ),
-          const SizedBox(height: RecorderTokens.space2),
-          Wrap(
-            spacing: RecorderTokens.space2,
-            runSpacing: RecorderTokens.space2,
-            children: [
-              _plannerInfoPill(
-                context,
-                icon: Icons.inbox_outlined,
-                label: "$openCount open",
-              ),
-              _plannerInfoPill(
-                context,
-                icon: Icons.schedule_outlined,
-                label: "$scheduledCount scheduled",
-              ),
-              if (reminderCount > 0)
-                _plannerInfoPill(
-                  context,
-                  icon: Icons.alarm_outlined,
-                  label: "$reminderCount reminder",
-                ),
-            ],
-          ),
           const SizedBox(height: RecorderTokens.space3),
           if (todos.isEmpty)
             Container(
@@ -2219,7 +2192,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                     Border.all(color: scheme.outline.withValues(alpha: 0.12)),
               ),
               child: Text(
-                "No TODO on this day yet. Add one from here, or click an empty slot in week view.",
+                "Nothing scheduled for this day yet.",
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -2255,7 +2228,7 @@ class ReportsScreenState extends State<ReportsScreen> {
     );
 
     const leftAxisWidth = 64.0;
-    const headerHeight = 58.0;
+    const headerHeight = 64.0;
     final gridHeight = 24 * hourHeight;
     final today = _normalizeDay(DateTime.now());
     final selectedDay = _normalizeDay(_todoAnchorDay);
@@ -2419,8 +2392,8 @@ class ReportsScreenState extends State<ReportsScreen> {
                                             margin: const EdgeInsets.fromLTRB(
                                                 4, 4, 4, 6),
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 6,
+                                              horizontal: 10,
+                                              vertical: 7,
                                             ),
                                             decoration: BoxDecoration(
                                               color: headerBg,
@@ -2445,68 +2418,65 @@ class ReportsScreenState extends State<ReportsScreen> {
                                                         color:
                                                             headerFg.withValues(
                                                                 alpha: 0.86),
-                                                      ),
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  "${days[i].month.toString().padLeft(2, "0")}/${days[i].day.toString().padLeft(2, "0")}",
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .labelLarge
-                                                      ?.copyWith(
-                                                        color: headerFg,
                                                         fontWeight:
                                                             FontWeight.w700,
                                                       ),
                                                 ),
                                                 const SizedBox(height: 4),
-                                                Wrap(
-                                                  spacing: 4,
-                                                  runSpacing: 4,
+                                                Row(
                                                   children: [
-                                                    if (openCount > 0)
-                                                      _plannerInfoPill(
-                                                        context,
-                                                        icon: Icons
-                                                            .inbox_outlined,
-                                                        label: "$openCount",
-                                                        compact: true,
-                                                        bgColor: scheme.surface
+                                                    Container(
+                                                      width: 28,
+                                                      height: 28,
+                                                      alignment:
+                                                          Alignment.center,
+                                                      decoration: BoxDecoration(
+                                                        color: scheme.surface
                                                             .withValues(
-                                                                alpha: 0.86),
-                                                        fgColor: headerFg,
-                                                        borderColor:
-                                                            Colors.transparent,
+                                                                alpha: isToday ||
+                                                                        isSelected
+                                                                    ? 0.92
+                                                                    : 0.74),
+                                                        shape: BoxShape.circle,
                                                       ),
-                                                    if (scheduledCount > 0)
-                                                      _plannerInfoPill(
-                                                        context,
-                                                        icon: Icons
-                                                            .schedule_outlined,
-                                                        label:
-                                                            "$scheduledCount",
-                                                        compact: true,
-                                                        bgColor: scheme.surface
-                                                            .withValues(
-                                                                alpha: 0.86),
-                                                        fgColor: headerFg,
-                                                        borderColor:
-                                                            Colors.transparent,
+                                                      child: Text(
+                                                        days[i].day.toString(),
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .labelLarge
+                                                            ?.copyWith(
+                                                              color: headerFg,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                            ),
                                                       ),
-                                                    if (reminderCount > 0)
-                                                      _plannerInfoPill(
-                                                        context,
-                                                        icon: Icons
-                                                            .alarm_outlined,
-                                                        label: "$reminderCount",
-                                                        compact: true,
-                                                        bgColor: scheme.surface
-                                                            .withValues(
-                                                                alpha: 0.86),
-                                                        fgColor: headerFg,
-                                                        borderColor:
-                                                            Colors.transparent,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        openCount == 0
+                                                            ? "Clear"
+                                                            : "$openCount task${openCount == 1 ? "" : "s"}"
+                                                                "${scheduledCount > 0 ? " · $scheduledCount timed" : ""}"
+                                                                "${reminderCount > 0 ? " · $reminderCount reminder" : ""}",
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .labelSmall
+                                                            ?.copyWith(
+                                                              color: headerFg
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.82),
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                            ),
                                                       ),
+                                                    ),
                                                   ],
                                                 ),
                                               ],
@@ -2948,14 +2918,14 @@ class ReportsScreenState extends State<ReportsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "Backlog in this week",
+                  "Unscheduled",
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "These TODO stay off the time grid until you give them a slot.",
+                  "Tasks in this week without a time slot.",
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -3045,10 +3015,10 @@ class ReportsScreenState extends State<ReportsScreen> {
           builder: (context, constraints) {
             final width = constraints.maxWidth;
             final aspectRatio = width < 700
-                ? 0.82
+                ? 0.96
                 : width < 980
-                    ? 0.96
-                    : 1.12;
+                    ? 1.08
+                    : 1.18;
             return GridView.builder(
               physics: const NeverScrollableScrollPhysics(),
               shrinkWrap: true,
@@ -3064,21 +3034,36 @@ class ReportsScreenState extends State<ReportsScreen> {
                 final inMonth = day.month == anchor.month;
                 final list = _sortTodos(byDay[day] ?? const []);
                 final openCount = list.where((t) => !t.done).length;
-                final doneCount = list.length - openCount;
-                final scheduledCount =
-                    list.where((t) => !t.done && _todoHasSchedule(t)).length;
                 final isToday = _isSameDay(day, today);
                 final isSelected = _isSameDay(day, _todoAnchorDay);
+                final visibleTodos = list.take(3).toList();
+                final remaining = list.length - visibleTodos.length;
                 final cellBg = isSelected
-                    ? scheme.secondaryContainer.withValues(alpha: 0.55)
+                    ? scheme.primaryContainer.withValues(alpha: 0.50)
                     : isToday
-                        ? scheme.primaryContainer.withValues(alpha: 0.38)
+                        ? scheme.secondaryContainer.withValues(alpha: 0.34)
                         : scheme.surfaceContainerLowest;
                 final cellBorder = isSelected
-                    ? scheme.secondary.withValues(alpha: 0.22)
+                    ? scheme.primary.withValues(alpha: 0.24)
                     : isToday
-                        ? scheme.primary.withValues(alpha: 0.22)
+                        ? scheme.secondary.withValues(alpha: 0.20)
                         : scheme.outline.withValues(alpha: 0.14);
+
+                void selectDay({required bool openWeek}) {
+                  setState(() {
+                    _dragTodoId = null;
+                    _dragOriginDayIndex = null;
+                    _dragOriginStartMinute = null;
+                    _dragCurrentDayIndex = null;
+                    _dragCurrentStartMinute = null;
+                    _dragDurationMinutes = null;
+                    _dragStartGlobalPosition = null;
+                    _todoAnchorDay = day;
+                    if (openWeek) {
+                      _todoCalendarView = _TodoCalendarView.week;
+                    }
+                  });
+                }
 
                 return RecorderTooltip(
                   message:
@@ -3091,17 +3076,9 @@ class ReportsScreenState extends State<ReportsScreen> {
                       child: InkWell(
                         borderRadius:
                             BorderRadius.circular(RecorderTokens.radiusM),
-                        onTap: () => setState(() {
-                          _dragTodoId = null;
-                          _dragOriginDayIndex = null;
-                          _dragOriginStartMinute = null;
-                          _dragCurrentDayIndex = null;
-                          _dragCurrentStartMinute = null;
-                          _dragDurationMinutes = null;
-                          _dragStartGlobalPosition = null;
-                          _todoAnchorDay = day;
-                          _todoCalendarView = _TodoCalendarView.week;
-                        }),
+                        onTap: () => selectDay(openWeek: isSelected && inMonth),
+                        onDoubleTap:
+                            inMonth ? () => selectDay(openWeek: true) : null,
                         onLongPress: _todoBusy || !inMonth
                             ? null
                             : () => _openTodoEditor(suggestedDay: day),
@@ -3117,44 +3094,58 @@ class ReportsScreenState extends State<ReportsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    day.day.toString(),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelLarge
-                                        ?.copyWith(
-                                          color: inMonth
-                                              ? null
-                                              : scheme.onSurfaceVariant,
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                                  Container(
+                                    width: 28,
+                                    height: 28,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? scheme.primary
+                                          : isToday
+                                              ? scheme.primaryContainer
+                                              : Colors.transparent,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Text(
+                                      day.day.toString(),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge
+                                          ?.copyWith(
+                                            color: isSelected
+                                                ? scheme.onPrimary
+                                                : inMonth
+                                                    ? (isToday
+                                                        ? scheme.primary
+                                                        : scheme.onSurface)
+                                                    : scheme.onSurfaceVariant,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
                                   ),
                                   const Spacer(),
                                   if (openCount > 0)
-                                    _plannerInfoPill(
-                                      context,
-                                      icon: Icons.inbox_outlined,
-                                      label: "$openCount",
-                                      compact: true,
-                                      bgColor: scheme.surface
-                                          .withValues(alpha: 0.86),
-                                      fgColor: isSelected
-                                          ? scheme.secondary
-                                          : scheme.onSurfaceVariant,
-                                      borderColor: Colors.transparent,
+                                    Text(
+                                      "$openCount",
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: scheme.onSurfaceVariant,
+                                            fontWeight: FontWeight.w700,
+                                          ),
                                     ),
                                 ],
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 8),
                               Expanded(
                                 child: list.isEmpty
                                     ? Align(
                                         alignment: Alignment.topLeft,
                                         child: Text(
                                           isSelected && inMonth
-                                              ? "Click to open week view"
+                                              ? "Select again for week"
                                               : "",
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
@@ -3170,7 +3161,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          for (final todo in list.take(3))
+                                          for (final todo in visibleTodos)
                                             Padding(
                                               padding: const EdgeInsets.only(
                                                   bottom: 4),
@@ -3178,118 +3169,58 @@ class ReportsScreenState extends State<ReportsScreen> {
                                                 message:
                                                     _todoCalendarTooltip(todo),
                                                 preferBelow: false,
-                                                child: Container(
-                                                  width: double.infinity,
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 4,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: todo.done
-                                                        ? scheme
-                                                            .surfaceContainerHighest
-                                                        : _todoIsOverdue(todo)
-                                                            ? scheme
-                                                                .errorContainer
-                                                                .withValues(
-                                                                    alpha: 0.86)
-                                                            : _todoHasSchedule(
-                                                                    todo)
-                                                                ? scheme
-                                                                    .primaryContainer
-                                                                    .withValues(
-                                                                        alpha:
-                                                                            0.86)
-                                                                : scheme
-                                                                    .tertiaryContainer
-                                                                    .withValues(
-                                                                        alpha:
-                                                                            0.82),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8),
-                                                  ),
-                                                  child: Row(
-                                                    children: [
-                                                      Container(
-                                                        width: 3,
-                                                        height: 18,
-                                                        decoration:
-                                                            BoxDecoration(
-                                                          color: _todoIsOverdue(
-                                                                  todo)
-                                                              ? scheme.error
-                                                              : todo.done
+                                                child: Row(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Container(
+                                                      width: 6,
+                                                      height: 6,
+                                                      margin:
+                                                          const EdgeInsets.only(
+                                                        top: 5,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color: _todoAccent(
+                                                            context, todo),
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    Expanded(
+                                                      child: Text(
+                                                        "${_todoHasSchedule(todo) ? "${_hhmmFromMinutes(_todoStartMinute(todo))} " : ""}${todo.content}",
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .labelSmall
+                                                            ?.copyWith(
+                                                              color: inMonth
                                                                   ? scheme
-                                                                      .outline
-                                                                  : _todoHasSchedule(
-                                                                          todo)
-                                                                      ? scheme
-                                                                          .primary
-                                                                      : scheme
-                                                                          .tertiary,
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(
-                                                                      999),
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 6),
-                                                      if (_todoHasSchedule(
-                                                          todo))
-                                                        Padding(
-                                                          padding:
-                                                              const EdgeInsets
-                                                                  .only(
-                                                                  right: 6),
-                                                          child: Text(
-                                                            _hhmmFromMinutes(
-                                                                _todoStartMinute(
-                                                                    todo)),
-                                                            style: Theme.of(
-                                                                    context)
-                                                                .textTheme
-                                                                .labelSmall
-                                                                ?.copyWith(
-                                                                  color: scheme
+                                                                      .onSurface
+                                                                  : scheme
                                                                       .onSurfaceVariant,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w700,
-                                                                ),
-                                                          ),
-                                                        ),
-                                                      Expanded(
-                                                        child: Text(
-                                                          todo.content,
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
-                                                          style:
-                                                              Theme.of(context)
-                                                                  .textTheme
-                                                                  .labelSmall
-                                                                  ?.copyWith(
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w600,
-                                                                    decoration: todo.done
-                                                                        ? TextDecoration
-                                                                            .lineThrough
-                                                                        : TextDecoration
-                                                                            .none,
-                                                                  ),
-                                                        ),
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                              decoration: todo
+                                                                      .done
+                                                                  ? TextDecoration
+                                                                      .lineThrough
+                                                                  : TextDecoration
+                                                                      .none,
+                                                            ),
                                                       ),
-                                                    ],
-                                                  ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
                                             ),
-                                          if (list.length > 3)
+                                          if (remaining > 0)
                                             Text(
-                                              "+${list.length - 3} more",
+                                              "+$remaining more",
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .labelSmall
@@ -3301,29 +3232,6 @@ class ReportsScreenState extends State<ReportsScreen> {
                                         ],
                                       ),
                               ),
-                              if (list.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  children: [
-                                    if (scheduledCount > 0)
-                                      _plannerInfoPill(
-                                        context,
-                                        icon: Icons.schedule_outlined,
-                                        label: "$scheduledCount timed",
-                                        compact: true,
-                                      ),
-                                    if (doneCount > 0)
-                                      _plannerInfoPill(
-                                        context,
-                                        icon: Icons.check_circle_outline,
-                                        label: "$doneCount done",
-                                        compact: true,
-                                      ),
-                                  ],
-                                ),
-                              ],
                             ],
                           ),
                         ),
@@ -3339,166 +3247,67 @@ class ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Widget _plannerInsightsPanel(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final now = DateTime.now();
-    final upcomingReminders = _todos
-        .where((todo) => !todo.done && _todoReminderLocal(todo) != null)
-        .toList()
-      ..sort((a, b) {
-        final at = _todoReminderLocal(a) ?? DateTime(2100);
-        final bt = _todoReminderLocal(b) ?? DateTime(2100);
-        return at.compareTo(bt);
-      });
-    final upcoming = upcomingReminders
-        .where((todo) {
-          final reminder = _todoReminderLocal(todo);
-          if (reminder == null) return false;
-          return reminder.isAfter(now.subtract(const Duration(minutes: 30)));
-        })
-        .take(5)
-        .toList();
-    final overdue = _sortTodos(_todos.where(_todoIsOverdue)).take(4).toList();
-
-    return Container(
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outline.withValues(alpha: 0.16)),
-      ),
-      padding: const EdgeInsets.all(RecorderTokens.space3),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("Insights", style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 6),
-          Text(
-            "Patterned after Google Calendar / Notion side panels: upcoming reminders + risk items in one glance.",
-            style: Theme.of(context)
-                .textTheme
-                .labelMedium
-                ?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: RecorderTokens.space3),
-          Text("Upcoming reminders",
-              style: Theme.of(context).textTheme.labelLarge),
-          const SizedBox(height: 6),
-          if (upcoming.isEmpty)
-            Text(
-              "No reminder in the near window.",
-              style: Theme.of(context)
-                  .textTheme
-                  .labelMedium
-                  ?.copyWith(color: scheme.onSurfaceVariant),
-            )
-          else
-            for (final todo in upcoming)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                leading: const Icon(Icons.alarm_outlined, size: 16),
-                title: Text(
-                  todo.content,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(_todoReminderLabel(todo)),
-                onTap: _todoBusy ? null : () => _openTodoEditor(todo: todo),
-              ),
-          const SizedBox(height: RecorderTokens.space2),
-          Text("Overdue", style: Theme.of(context).textTheme.labelLarge),
-          const SizedBox(height: 6),
-          if (overdue.isEmpty)
-            Text(
-              "No overdue TODO.",
-              style: Theme.of(context)
-                  .textTheme
-                  .labelMedium
-                  ?.copyWith(color: scheme.onSurfaceVariant),
-            )
-          else
-            for (final todo in overdue)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                leading: Icon(Icons.warning_amber_rounded,
-                    size: 16, color: scheme.error),
-                title: Text(
-                  todo.content,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text("Due ${_dateLocal(_todoDay(todo))}"),
-                onTap: _todoBusy ? null : () => _openTodoEditor(todo: todo),
-              ),
-        ],
-      ),
-    );
-  }
-
   Widget _todoSectionCard(
     BuildContext context, {
     required String title,
     required List<ReportTodo> todos,
     Color? accent,
-    bool initiallyExpanded = true,
+    String? note,
   }) {
     final scheme = Theme.of(context).colorScheme;
     final sectionAccent = accent ?? scheme.primary;
     return Container(
       margin: const EdgeInsets.only(bottom: RecorderTokens.space2),
-      padding: const EdgeInsets.symmetric(
-        horizontal: RecorderTokens.space2,
-        vertical: RecorderTokens.space1,
-      ),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.shadow.withValues(alpha: 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(
-            horizontal: RecorderTokens.space2,
-            vertical: 0,
-          ),
-          childrenPadding:
-              const EdgeInsets.symmetric(horizontal: RecorderTokens.space2),
-          initiallyExpanded: initiallyExpanded,
-          title: Text(
-            title,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: sectionAccent,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: sectionAccent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: sectionAccent,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
               Text(
                 "${todos.length}",
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                     ),
               ),
-              const SizedBox(width: 4),
-              const Icon(Icons.expand_more, size: 18),
             ],
           ),
-          children: [
+          if (note != null) ...[
             const SizedBox(height: 4),
-            for (final todo in todos) _todoChip(context, todo),
+            Text(
+              note,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
           ],
-        ),
+          const SizedBox(height: 10),
+          for (final todo in todos) _todoChip(context, todo),
+        ],
       ),
     );
   }
@@ -3522,6 +3331,10 @@ class ReportsScreenState extends State<ReportsScreen> {
     final hasQuery = _todoSearch.text.trim().isNotEmpty;
     final noResult =
         open.isEmpty && done.isEmpty && (_todos.isNotEmpty || hasQuery);
+    final showAllDone = hasQuery ||
+        _todoListFilter == _TodoListFilter.done ||
+        done.length <= 12;
+    final doneVisible = showAllDone ? done : done.take(12).toList();
 
     final searchField = TextField(
       controller: _todoSearch,
@@ -3607,8 +3420,8 @@ class ReportsScreenState extends State<ReportsScreen> {
         ),
         const SizedBox(height: RecorderTokens.space2),
         Wrap(
-          spacing: RecorderTokens.space2,
-          runSpacing: RecorderTokens.space1,
+          spacing: 8,
+          runSpacing: 8,
           children: [
             for (final filter in _TodoListFilter.values)
               ChoiceChip(
@@ -3642,7 +3455,7 @@ class ReportsScreenState extends State<ReportsScreen> {
               title: "Overdue",
               todos: overdue,
               accent: scheme.error,
-              initiallyExpanded: true,
+              note: "Needs attention first.",
             ),
           if (today.isNotEmpty)
             _todoSectionCard(
@@ -3650,31 +3463,33 @@ class ReportsScreenState extends State<ReportsScreen> {
               title: "Today",
               todos: today,
               accent: scheme.primary,
-              initiallyExpanded: overdue.isEmpty,
+              note: "Current day focus.",
             ),
           if (scheduled.isNotEmpty)
             _todoSectionCard(
               context,
-              title: "Upcoming scheduled",
+              title: "Upcoming",
               todos: scheduled,
               accent: scheme.secondary,
-              initiallyExpanded: false,
+              note: "Scheduled later in the timeline.",
             ),
           if (backlog.isNotEmpty)
             _todoSectionCard(
               context,
-              title: "Backlog (no schedule)",
+              title: "Backlog",
               todos: backlog,
               accent: scheme.tertiary,
-              initiallyExpanded: false,
+              note: "Task list without a time slot.",
             ),
           if (done.isNotEmpty) ...[
             _todoSectionCard(
               context,
               title: "Done",
-              todos: done.take(30).toList(),
+              todos: doneVisible,
               accent: scheme.onSurfaceVariant,
-              initiallyExpanded: false,
+              note: showAllDone
+                  ? "Completed items."
+                  : "Showing latest ${doneVisible.length} completed items.",
             ),
           ],
         ],
@@ -3685,6 +3500,13 @@ class ReportsScreenState extends State<ReportsScreen> {
   Widget _todoCalendarDimension(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final hourHeight = _weekCalendarHourHeight(context);
+    final calendarCanvas = _todoCalendarView == _TodoCalendarView.week
+        ? _todoWeekView(
+            context,
+            _todoAnchorDay,
+            hourHeight: hourHeight,
+          )
+        : _todoMonthView(context, _todoAnchorDay);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3721,43 +3543,57 @@ class ReportsScreenState extends State<ReportsScreen> {
                   _todoCalendarView = s.first;
                 }),
               );
-              final rangeNavigator = Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: "Previous",
-                    onPressed: _todoBusy ? null : () => _shiftTodoRange(-1),
-                    icon: const Icon(Icons.chevron_left),
-                  ),
-                  Text(
-                    _todoRangeLabel(),
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  IconButton(
-                    tooltip: "Next",
-                    onPressed: _todoBusy ? null : () => _shiftTodoRange(1),
-                    icon: const Icon(Icons.chevron_right),
-                  ),
-                  TextButton(
-                    onPressed: _todoBusy
-                        ? null
-                        : () => setState(() {
-                              _dragTodoId = null;
-                              _dragOriginDayIndex = null;
-                              _dragOriginStartMinute = null;
-                              _dragCurrentDayIndex = null;
-                              _dragCurrentStartMinute = null;
-                              _dragDurationMinutes = null;
-                              _dragStartGlobalPosition = null;
-                              _todoAnchorDay = _normalizeDay(DateTime.now());
-                            }),
-                    child: const Text("Today"),
-                  ),
-                ],
+              final rangeNavigator = SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: "Previous",
+                      onPressed: _todoBusy ? null : () => _shiftTodoRange(-1),
+                      icon: const Icon(Icons.chevron_left),
+                    ),
+                    Text(
+                      _todoRangeLabel(),
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    IconButton(
+                      tooltip: "Next",
+                      onPressed: _todoBusy ? null : () => _shiftTodoRange(1),
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                    TextButton(
+                      onPressed: _todoBusy
+                          ? null
+                          : () => setState(() {
+                                _dragTodoId = null;
+                                _dragOriginDayIndex = null;
+                                _dragOriginStartMinute = null;
+                                _dragCurrentDayIndex = null;
+                                _dragCurrentStartMinute = null;
+                                _dragDurationMinutes = null;
+                                _dragStartGlobalPosition = null;
+                                _todoAnchorDay = _normalizeDay(DateTime.now());
+                              }),
+                      child: const Text("Today"),
+                    ),
+                  ],
+                ),
               );
-              final addButton = OutlinedButton.icon(
+              final openWeekButton = _todoCalendarView ==
+                      _TodoCalendarView.month
+                  ? OutlinedButton.icon(
+                      onPressed: _todoBusy
+                          ? null
+                          : () => setState(
+                              () => _todoCalendarView = _TodoCalendarView.week),
+                      icon: const Icon(Icons.view_week_outlined, size: 18),
+                      label: const Text("Open week"),
+                    )
+                  : null;
+              final addButton = FilledButton.icon(
                 onPressed: _todoBusy
                     ? null
                     : () => _openTodoEditor(
@@ -3766,12 +3602,12 @@ class ReportsScreenState extends State<ReportsScreen> {
                               _todoCalendarView == _TodoCalendarView.week,
                         ),
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text("Add on selected day"),
+                label: const Text("New task"),
               );
               final hintText = Text(
                 _todoCalendarView == _TodoCalendarView.week
-                    ? "Click empty slots to create. Drag blocks to reschedule. Long press a month cell to add directly."
-                    : "Click a day to jump into week view. Long press a day to add a TODO directly.",
+                    ? "Click empty slots to create. Drag blocks to reschedule."
+                    : "Click a day to select it. Click the selected day again to open week.",
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -3785,6 +3621,10 @@ class ReportsScreenState extends State<ReportsScreen> {
                     const SizedBox(height: RecorderTokens.space2),
                     rangeNavigator,
                     const SizedBox(height: RecorderTokens.space2),
+                    if (openWeekButton != null) ...[
+                      openWeekButton,
+                      const SizedBox(height: RecorderTokens.space2),
+                    ],
                     addButton,
                     const SizedBox(height: RecorderTokens.space2),
                     hintText,
@@ -3800,6 +3640,10 @@ class ReportsScreenState extends State<ReportsScreen> {
                       calendarModeSwitch,
                       const SizedBox(width: RecorderTokens.space2),
                       Expanded(child: rangeNavigator),
+                      if (openWeekButton != null) ...[
+                        openWeekButton,
+                        const SizedBox(width: RecorderTokens.space2),
+                      ],
                       addButton,
                     ],
                   ),
@@ -3811,16 +3655,31 @@ class ReportsScreenState extends State<ReportsScreen> {
           ),
         ),
         const SizedBox(height: RecorderTokens.space2),
-        if (_todoCalendarView == _TodoCalendarView.week)
-          _todoWeekView(
-            context,
-            _todoAnchorDay,
-            hourHeight: hourHeight,
-          )
-        else
-          _todoMonthView(context, _todoAnchorDay),
-        const SizedBox(height: RecorderTokens.space2),
-        _calendarFocusDayCard(context),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth >= 1180) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: calendarCanvas),
+                  const SizedBox(width: RecorderTokens.space3),
+                  SizedBox(
+                    width: 320,
+                    child: _calendarFocusDayCard(context),
+                  ),
+                ],
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                calendarCanvas,
+                const SizedBox(height: RecorderTokens.space2),
+                _calendarFocusDayCard(context),
+              ],
+            );
+          },
+        ),
       ],
     );
   }
@@ -3834,83 +3693,60 @@ class ReportsScreenState extends State<ReportsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final insightsToggle = Tooltip(
-              message: _plannerShowInsights ? "Hide insights" : "Show insights",
-              child: IconButton(
-                onPressed: () => setState(
-                    () => _plannerShowInsights = !_plannerShowInsights),
-                icon: Icon(
-                  _plannerShowInsights
-                      ? Icons.view_sidebar_outlined
-                      : Icons.view_sidebar,
-                  size: 18,
-                ),
-                style: IconButton.styleFrom(
-                  foregroundColor: _plannerShowInsights
-                      ? scheme.primary
-                      : scheme.onSurfaceVariant,
-                  backgroundColor: _plannerShowInsights
-                      ? scheme.primary.withValues(alpha: 0.12)
-                      : scheme.surfaceContainerLowest,
-                ),
-              ),
-            );
-            final newTodoButton = FilledButton.icon(
-              onPressed: _todoBusy ? null : () => _openTodoEditor(),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text("New"),
-            );
-            final newTodoIconButton = Tooltip(
-              message: "New TODO",
-              child: IconButton(
-                onPressed: _todoBusy ? null : () => _openTodoEditor(),
-                icon: const Icon(Icons.add, size: 18),
-                style: IconButton.styleFrom(
-                  foregroundColor: scheme.primary,
-                  backgroundColor: scheme.primary.withValues(alpha: 0.12),
-                ),
-              ),
-            );
-            if (constraints.maxWidth < 760) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text("Planner",
-                            style: Theme.of(context).textTheme.titleLarge),
+        Container(
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
+          ),
+          padding: const EdgeInsets.all(RecorderTokens.space3),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final modeSwitch = SegmentedButton<_PlannerDimension>(
+                    segments: const [
+                      ButtonSegment(
+                        value: _PlannerDimension.todo,
+                        icon: Icon(Icons.checklist_outlined),
+                        label: Text("Tasks"),
                       ),
-                      newTodoIconButton,
+                      ButtonSegment(
+                        value: _PlannerDimension.calendar,
+                        icon: Icon(Icons.calendar_month_outlined),
+                        label: Text("Calendar"),
+                      ),
                     ],
-                  ),
-                  const SizedBox(height: RecorderTokens.space1),
-                  if (_lastRefreshedAt != null)
-                    Text(
-                      _updatedAgoText(_lastRefreshedAt),
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
-                          ?.copyWith(color: scheme.onSurfaceVariant),
-                    ),
-                  const SizedBox(height: RecorderTokens.space1),
-                  Align(alignment: Alignment.centerLeft, child: insightsToggle),
-                ],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
+                    selected: {_plannerDimension},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) =>
+                        setState(() => _plannerDimension = s.first),
+                  );
+                  final newTodoButton = FilledButton.icon(
+                    onPressed: _todoBusy ? null : () => _openTodoEditor(),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text("New task"),
+                  );
+                  final titleBlock = Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text("Planner",
-                          style: Theme.of(context).textTheme.titleLarge),
+                      Text(
+                        "Planner",
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
                       const SizedBox(height: 4),
-                      if (_lastRefreshedAt != null)
+                      Text(
+                        _plannerDimension == _PlannerDimension.todo
+                            ? "Windows Todo style task lists with clean sections."
+                            : "Google Calendar style schedule with a focused day agenda.",
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelMedium
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                      if (_lastRefreshedAt != null) ...[
+                        const SizedBox(height: 6),
                         Text(
                           _updatedAgoText(_lastRefreshedAt),
                           style: Theme.of(context)
@@ -3918,82 +3754,44 @@ class ReportsScreenState extends State<ReportsScreen> {
                               .labelSmall
                               ?.copyWith(color: scheme.onSurfaceVariant),
                         ),
+                      ],
                     ],
-                  ),
-                ),
-                insightsToggle,
-                const SizedBox(width: RecorderTokens.space2),
-                newTodoButton,
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: RecorderTokens.space2),
-        SegmentedButton<_PlannerDimension>(
-          segments: const [
-            ButtonSegment(
-              value: _PlannerDimension.todo,
-              icon: Icon(Icons.checklist_outlined),
-              label: Text("TODO"),
-            ),
-            ButtonSegment(
-              value: _PlannerDimension.calendar,
-              icon: Icon(Icons.calendar_month_outlined),
-              label: Text("Calendar"),
-            ),
-          ],
-          selected: {_plannerDimension},
-          showSelectedIcon: false,
-          onSelectionChanged: (s) =>
-              setState(() => _plannerDimension = s.first),
-        ),
-        if (_plannerDimension == _PlannerDimension.todo) ...[
-          const SizedBox(height: RecorderTokens.space2),
-          _plannerCompactStats(context),
-        ] else ...[
-          const SizedBox(height: RecorderTokens.space1),
-          Text(
-            "Week / Month 视图，支持点击空白创建、拖拽改期，并按选中日查看 agenda。",
-            style: Theme.of(context)
-                .textTheme
-                .labelSmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
+                  );
+
+                  if (constraints.maxWidth < 840) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(child: titleBlock),
+                            newTodoButton,
+                          ],
+                        ),
+                        const SizedBox(height: RecorderTokens.space2),
+                        modeSwitch,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: titleBlock),
+                      modeSwitch,
+                      const SizedBox(width: RecorderTokens.space2),
+                      newTodoButton,
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: RecorderTokens.space3),
+              _plannerCompactStats(context),
+            ],
           ),
-        ],
-        const SizedBox(height: RecorderTokens.space2),
-        Divider(
-          height: 1,
-          color: scheme.outline.withValues(alpha: 0.14),
         ),
         const SizedBox(height: RecorderTokens.space3),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            if (!_plannerShowInsights) {
-              return mainPanel;
-            }
-            if (constraints.maxWidth >= 1160) {
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(flex: 4, child: mainPanel),
-                  const SizedBox(width: RecorderTokens.space3),
-                  SizedBox(
-                    width: 320,
-                    child: _plannerInsightsPanel(context),
-                  ),
-                ],
-              );
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                mainPanel,
-                const SizedBox(height: RecorderTokens.space2),
-                _plannerInsightsPanel(context),
-              ],
-            );
-          },
-        ),
+        mainPanel,
       ],
     );
   }
@@ -4413,7 +4211,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "Focus view for TODO and Calendar. Use Insights toggle if you need side context.",
+                    "Tasks and calendar in one compact planner view.",
                     style: Theme.of(context)
                         .textTheme
                         .labelMedium
@@ -4584,17 +4382,7 @@ class ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _plannerPrimaryCard(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(RecorderTokens.space4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _todoPlannerSection(context),
-          ],
-        ),
-      ),
-    );
+    return _todoPlannerSection(context);
   }
 
   @override
@@ -5273,21 +5061,9 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
                   _ReportTabData(
                     label: "Markdown",
                     icon: Icons.article_outlined,
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(RecorderTokens.space3),
-                      child: MarkdownBody(
-                        data: out.isEmpty ? "*(No output)*" : out,
-                        selectable: true,
-                        extensionSet: md.ExtensionSet.gitHubFlavored,
-                        styleSheet: MarkdownStyleSheet.fromTheme(
-                          Theme.of(context),
-                        ).copyWith(
-                          code: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(fontFamily: "monospace"),
-                        ),
-                      ),
+                    child: _textPanel(
+                      context,
+                      out.isEmpty ? "(No output)" : out,
                     ),
                   ),
                 ];
