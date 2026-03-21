@@ -55,3 +55,66 @@ Root: HKCU; Subkey: "Software\Classes\worktrace\shell\open\command"; ValueType: 
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch WorkTrace"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function WorkTraceProcessName(Index: Integer): String;
+begin
+  case Index of
+    0: Result := 'WorkTrace.exe';
+    1: Result := 'recorderphone_ui.exe';
+    2: Result := 'recorder_core.exe';
+    3: Result := 'windows_collector.exe';
+  else
+    Result := '';
+  end;
+end;
+
+procedure StopWorkTraceProcesses();
+var
+  Attempt: Integer;
+  Index: Integer;
+  ResultCode: Integer;
+  ImageName: String;
+begin
+  Log('Stopping WorkTrace processes before file operations');
+  for Attempt := 0 to 2 do
+  begin
+    for Index := 0 to 3 do
+    begin
+      ImageName := WorkTraceProcessName(Index);
+      if ImageName <> '' then
+      begin
+        if Exec(
+          ExpandConstant('{sys}\taskkill.exe'),
+          '/IM "' + ImageName + '" /F /T',
+          '',
+          SW_HIDE,
+          ewWaitUntilTerminated,
+          ResultCode
+        ) then
+        begin
+          Log('taskkill ' + ImageName + ' exit=' + IntToStr(ResultCode));
+        end
+        else
+        begin
+          Log('taskkill ' + ImageName + ' could not be started');
+        end;
+      end;
+    end;
+    Sleep(400);
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopWorkTraceProcesses();
+  Result := '';
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    StopWorkTraceProcesses();
+  end;
+end;
