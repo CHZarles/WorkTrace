@@ -143,7 +143,7 @@ class SettingsScreenState extends State<SettingsScreen> {
       }
 
       final build = await mgr.readBuildInfo();
-      final repoDefault = (build?.updateGitHubRepo ?? "").trim();
+      final repoDefault = ((await mgr.defaultGitHubRepo()) ?? "").trim();
       final repo = repoPref.isNotEmpty ? repoPref : repoDefault;
 
       if (!mounted) return;

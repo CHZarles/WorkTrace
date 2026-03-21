@@ -10,6 +10,7 @@ UpdateManager getUpdateManager() => _IoUpdateManager();
 
 class _IoUpdateManager implements UpdateManager {
   static const _userAgent = "WorkTrace";
+  static const _defaultGitHubRepo = "CHZarles/WorkTrace";
   static const _defaultAssetSuffix = "-windows-setup.exe";
   static const _innoAppId = "{D3A8F3B5-3A57-4A17-9A2B-D8C1A8E1D95D}";
 
@@ -53,8 +54,14 @@ class _IoUpdateManager implements UpdateManager {
     final base = dir.path;
     final core = File("$base${sep}recorder_core.exe");
     final collector = File("$base${sep}windows_collector.exe");
+    final workTraceUi = File("$base${sep}WorkTrace.exe");
+    final legacyUi = File("$base${sep}recorderphone_ui.exe");
     final info = File("$base${sep}build-info.json");
-    return core.existsSync() && collector.existsSync() && info.existsSync();
+    return core.existsSync() &&
+        collector.existsSync() &&
+        (workTraceUi.existsSync() ||
+            legacyUi.existsSync() ||
+            info.existsSync());
   }
 
   Future<String?> _queryRegistryValue(String key, String valueName) async {
@@ -166,8 +173,7 @@ class _IoUpdateManager implements UpdateManager {
   Future<String?> defaultGitHubRepo() async {
     final info = await readBuildInfo();
     final r = (info?.updateGitHubRepo ?? "").trim();
-    if (r.isEmpty) return null;
-    return r;
+    return r.isEmpty ? _defaultGitHubRepo : r;
   }
 
   Uri _latestReleaseApi(String repo) {
@@ -310,7 +316,10 @@ class _IoUpdateManager implements UpdateManager {
           ok: false, error: "not_supported", updateAvailable: false);
     }
 
-    final repo = gitHubRepo.trim();
+    var repo = gitHubRepo.trim();
+    if (repo.isEmpty) {
+      repo = ((await defaultGitHubRepo()) ?? "").trim();
+    }
     if (repo.isEmpty) {
       return const UpdateCheckResult(
           ok: false, error: "missing_repo", updateAvailable: false);
@@ -674,8 +683,8 @@ try {
     try {
       final setupAsset = await _downloadToTempFile(url);
       final stamp = DateTime.now().millisecondsSinceEpoch;
-      final scriptFile = File(
-          _join(Directory.systemTemp.path, "WorkTrace-update-$stamp.ps1"));
+      final scriptFile =
+          File(_join(Directory.systemTemp.path, "WorkTrace-update-$stamp.ps1"));
       await scriptFile.writeAsString(_updaterScript(), flush: true);
 
       final preferredExeName = "WorkTrace.exe";

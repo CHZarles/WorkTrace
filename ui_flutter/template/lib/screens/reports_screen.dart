@@ -15,10 +15,6 @@ enum _PlannerDimension { todo, calendar }
 
 enum _TodoCalendarView { week, month }
 
-enum _TodoListFilter { all, today, scheduled, reminder, done }
-
-enum _TodoListSort { smart, dueSoon, updated }
-
 enum _ReportSettingsSection {
   connection,
   automation,
@@ -93,8 +89,6 @@ class ReportsScreenState extends State<ReportsScreen> {
   _ReportKindFilter _filter = _ReportKindFilter.daily;
   _PlannerDimension _plannerDimension = _PlannerDimension.todo;
   _TodoCalendarView _todoCalendarView = _TodoCalendarView.week;
-  _TodoListFilter _todoListFilter = _TodoListFilter.all;
-  _TodoListSort _todoListSort = _TodoListSort.smart;
   _ReportSettingsSection _reportSettingsSection =
       _ReportSettingsSection.connection;
   _ReportSettingsLayer _reportSettingsLayer = _ReportSettingsLayer.basic;
@@ -596,75 +590,43 @@ class ReportsScreenState extends State<ReportsScreen> {
         _todos.where((t) => !t.done && _todoHasSchedule(t)).length;
     final overdue = _todos.where(_todoIsOverdue).length;
 
-    Widget stat({
-      required String label,
-      required String value,
-      required IconData icon,
-      Color? tint,
-      Color? fill,
-    }) {
-      final color = tint ?? scheme.onSurface;
-      return Container(
-        constraints: const BoxConstraints(minWidth: 132),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: fill ?? scheme.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: scheme.outline.withValues(alpha: 0.12)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(height: 10),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-            ),
-          ],
-        ),
-      );
-    }
-
     return Wrap(
-      spacing: 10,
-      runSpacing: 10,
+      spacing: RecorderTokens.space2,
+      runSpacing: RecorderTokens.space2,
       children: [
-        stat(
-          label: "Open tasks",
-          value: "$open",
+        _plannerInfoPill(
+          context,
           icon: Icons.inbox_outlined,
+          label: "Open $open",
+          compact: true,
         ),
-        stat(
-          label: "Today",
-          value: "$today",
+        _plannerInfoPill(
+          context,
           icon: Icons.today_outlined,
-          tint: scheme.primary,
-          fill: scheme.primaryContainer.withValues(alpha: 0.34),
+          label: "Today $today",
+          compact: true,
+          bgColor: scheme.primaryContainer.withValues(alpha: 0.42),
+          fgColor: scheme.primary,
+          borderColor: scheme.primary.withValues(alpha: 0.18),
         ),
-        stat(
-          label: "Scheduled",
-          value: "$scheduled",
+        _plannerInfoPill(
+          context,
           icon: Icons.schedule_outlined,
+          label: "Timed $scheduled",
+          compact: true,
         ),
-        stat(
-          label: "Overdue",
-          value: "$overdue",
+        _plannerInfoPill(
+          context,
           icon: Icons.warning_amber_rounded,
-          tint: overdue > 0 ? scheme.error : scheme.onSurface,
-          fill: overdue > 0
-              ? scheme.errorContainer.withValues(alpha: 0.42)
+          label: "Overdue $overdue",
+          compact: true,
+          bgColor: overdue > 0
+              ? scheme.errorContainer.withValues(alpha: 0.48)
               : scheme.surfaceContainerLowest,
+          fgColor: overdue > 0 ? scheme.error : scheme.onSurfaceVariant,
+          borderColor: overdue > 0
+              ? scheme.error.withValues(alpha: 0.18)
+              : scheme.outline.withValues(alpha: 0.16),
         ),
       ],
     );
@@ -718,10 +680,6 @@ class ReportsScreenState extends State<ReportsScreen> {
     return "Backlog";
   }
 
-  bool _todoHasReminder(ReportTodo todo) {
-    return _todoReminderLocal(todo) != null;
-  }
-
   bool _todoIsToday(ReportTodo todo) {
     return _isSameDay(_todoDay(todo), DateTime.now());
   }
@@ -743,21 +701,6 @@ class ReportsScreenState extends State<ReportsScreen> {
     final dueAt = _todoDueAtLocal(todo);
     if (dueAt == null) return false;
     return dueAt.isBefore(DateTime.now());
-  }
-
-  bool _todoMatchesListFilter(ReportTodo todo) {
-    switch (_todoListFilter) {
-      case _TodoListFilter.all:
-        return true;
-      case _TodoListFilter.today:
-        return _todoIsToday(todo);
-      case _TodoListFilter.scheduled:
-        return _todoHasSchedule(todo);
-      case _TodoListFilter.reminder:
-        return _todoHasReminder(todo);
-      case _TodoListFilter.done:
-        return todo.done;
-    }
   }
 
   bool _todoMatchesSearch(ReportTodo todo) {
@@ -786,11 +729,6 @@ class ReportsScreenState extends State<ReportsScreen> {
     return _todoUpdatedAtLocal(b).compareTo(_todoUpdatedAtLocal(a));
   }
 
-  int _compareTodoByUpdated(ReportTodo a, ReportTodo b) {
-    if (a.done != b.done) return a.done ? 1 : -1;
-    return _todoUpdatedAtLocal(b).compareTo(_todoUpdatedAtLocal(a));
-  }
-
   int _compareTodoSmart(ReportTodo a, ReportTodo b) {
     if (a.done != b.done) return a.done ? 1 : -1;
     final aOverdue = _todoIsOverdue(a);
@@ -805,62 +743,23 @@ class ReportsScreenState extends State<ReportsScreen> {
     return _compareTodoByDueSoon(a, b);
   }
 
-  int _compareTodoForList(ReportTodo a, ReportTodo b) {
-    switch (_todoListSort) {
-      case _TodoListSort.smart:
-        return _compareTodoSmart(a, b);
-      case _TodoListSort.dueSoon:
-        return _compareTodoByDueSoon(a, b);
-      case _TodoListSort.updated:
-        return _compareTodoByUpdated(a, b);
-    }
-  }
-
-  List<ReportTodo> _sortTodosForList(Iterable<ReportTodo> todos) {
+  List<ReportTodo> _sortPlannerTodos(Iterable<ReportTodo> todos) {
     final out = todos.toList();
-    out.sort(_compareTodoForList);
+    out.sort(_compareTodoSmart);
     return out;
   }
 
   List<ReportTodo> _todosForListPanel() {
-    return _sortTodosForList(_todos.where((todo) {
-      if (!_todoMatchesListFilter(todo)) return false;
-      if (!_todoMatchesSearch(todo)) return false;
-      return true;
-    }));
-  }
-
-  String _todoListFilterLabel(_TodoListFilter filter) {
-    switch (filter) {
-      case _TodoListFilter.all:
-        return "All";
-      case _TodoListFilter.today:
-        return "Today";
-      case _TodoListFilter.scheduled:
-        return "Scheduled";
-      case _TodoListFilter.reminder:
-        return "Reminder";
-      case _TodoListFilter.done:
-        return "Done";
-    }
-  }
-
-  String _todoListSortLabel(_TodoListSort sort) {
-    switch (sort) {
-      case _TodoListSort.smart:
-        return "Smart";
-      case _TodoListSort.dueSoon:
-        return "Due soon";
-      case _TodoListSort.updated:
-        return "Recently updated";
-    }
+    return _sortPlannerTodos(
+      _todos.where((todo) => _todoMatchesSearch(todo)),
+    );
   }
 
   double _weekCalendarHourHeight(BuildContext context) {
-    final viewport = (MediaQuery.of(context).size.height * 0.66)
-        .clamp(560.0, 760.0)
+    final viewport = (MediaQuery.of(context).size.height * 0.76)
+        .clamp(680.0, 920.0)
         .toDouble();
-    return ((viewport - 38) / 24).clamp(24.0, 30.0).toDouble();
+    return ((viewport - 52) / 24).clamp(28.0, 36.0).toDouble();
   }
 
   String _reportSettingsSectionLabel(_ReportSettingsSection section) {
@@ -1803,20 +1702,6 @@ class ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  List<ReportTodo> _todosForVisibleCalendarRange() {
-    if (_todoCalendarView == _TodoCalendarView.week) {
-      final start = _startOfWeekMonday(_todoAnchorDay);
-      final endExclusive = start.add(const Duration(days: 7));
-      return _sortTodos(
-        _todos.where((todo) {
-          final d = _todoDay(todo);
-          return !d.isBefore(start) && d.isBefore(endExclusive);
-        }),
-      );
-    }
-    return _todosForMonth(_todoAnchorDay);
-  }
-
   Widget _plannerInfoPill(
     BuildContext context, {
     required IconData icon,
@@ -1852,127 +1737,6 @@ class ReportsScreenState extends State<ReportsScreen> {
                   color: resolvedFg,
                   fontWeight: FontWeight.w600,
                 ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _calendarOverviewCard(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final visible = _todosForVisibleCalendarRange();
-    final openCount = visible.where((todo) => !todo.done).length;
-    final scheduledCount =
-        visible.where((todo) => !todo.done && _todoHasSchedule(todo)).length;
-    final reminderCount = visible
-        .where((todo) => !todo.done && _todoReminderLocal(todo) != null)
-        .length;
-    final selectedDayCount = _todosForDayPanel(_todoAnchorDay).length;
-    final viewLabel =
-        _todoCalendarView == _TodoCalendarView.week ? "Week" : "Month";
-    final hint = _todoCalendarView == _TodoCalendarView.week
-        ? "Click empty time to create. Drag blocks to reschedule."
-        : "Click a day to select it. Click the selected day again to open week.";
-
-    return Container(
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
-      ),
-      padding: const EdgeInsets.all(RecorderTokens.space3),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 720;
-              final titleBlock = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "$viewLabel view",
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: scheme.primary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _todoRangeLabel(),
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "${_todoDayTitle(_todoAnchorDay)} · $selectedDayCount task${selectedDayCount == 1 ? "" : "s"}",
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    hint,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              );
-              final pills = Wrap(
-                spacing: RecorderTokens.space2,
-                runSpacing: RecorderTokens.space2,
-                children: [
-                  _plannerInfoPill(
-                    context,
-                    icon: Icons.inbox_outlined,
-                    label: "$openCount open",
-                  ),
-                  _plannerInfoPill(
-                    context,
-                    icon: Icons.schedule_outlined,
-                    label: "$scheduledCount timed",
-                  ),
-                  _plannerInfoPill(
-                    context,
-                    icon: Icons.adjust_outlined,
-                    label: "$selectedDayCount on selected day",
-                  ),
-                  if (reminderCount > 0)
-                    _plannerInfoPill(
-                      context,
-                      icon: Icons.alarm_outlined,
-                      label: "$reminderCount reminder",
-                      bgColor:
-                          scheme.secondaryContainer.withValues(alpha: 0.72),
-                      fgColor: scheme.secondary,
-                      borderColor: scheme.secondary.withValues(alpha: 0.18),
-                    ),
-                ],
-              );
-
-              if (compact) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    titleBlock,
-                    const SizedBox(height: RecorderTokens.space2),
-                    pills,
-                  ],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: titleBlock),
-                  const SizedBox(width: RecorderTokens.space3),
-                  Flexible(
-                      child:
-                          Align(alignment: Alignment.topRight, child: pills)),
-                ],
-              );
-            },
           ),
         ],
       ),
@@ -2109,9 +1873,6 @@ class ReportsScreenState extends State<ReportsScreen> {
     final openCount = todos.where((todo) => !todo.done).length;
     final scheduledCount =
         todos.where((todo) => !todo.done && _todoHasSchedule(todo)).length;
-    final reminderCount = todos
-        .where((todo) => !todo.done && _todoReminderLocal(todo) != null)
-        .length;
 
     return Container(
       decoration: BoxDecoration(
@@ -2144,7 +1905,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "$openCount open · $scheduledCount timed${reminderCount > 0 ? " · $reminderCount reminder" : ""}",
+                    "$openCount open · $scheduledCount timed",
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
@@ -2156,8 +1917,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                     ? null
                     : () => _openTodoEditor(
                           suggestedDay: day,
-                          forceSchedule:
-                              _todoCalendarView == _TodoCalendarView.week,
+                          forceSchedule: true,
                         ),
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text("Add task"),
@@ -2249,7 +2009,7 @@ class ReportsScreenState extends State<ReportsScreen> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final dayWidth = (((constraints.maxWidth - leftAxisWidth) / 7)
-                      .clamp(112.0, 220.0))
+                      .clamp(140.0, 280.0))
                   .toDouble();
               final minWidth = leftAxisWidth + dayWidth * 7;
               final width = constraints.maxWidth > minWidth
@@ -2457,9 +2217,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                                                       child: Text(
                                                         openCount == 0
                                                             ? "Clear"
-                                                            : "$openCount task${openCount == 1 ? "" : "s"}"
-                                                                "${scheduledCount > 0 ? " · $scheduledCount timed" : ""}"
-                                                                "${reminderCount > 0 ? " · $reminderCount reminder" : ""}",
+                                                            : "$openCount open",
                                                         maxLines: 2,
                                                         overflow: TextOverflow
                                                             .ellipsis,
@@ -2557,17 +2315,17 @@ class ReportsScreenState extends State<ReportsScreen> {
                                 final height =
                                     (visualDurationMinute / 60.0) * hourHeight;
                                 final blockHeight =
-                                    height.clamp(24, 9999).toDouble();
+                                    height.clamp(30, 9999).toDouble();
                                 final columns = isDraggingTodo
                                     ? 1
                                     : (layout.columnCount <= 0
                                         ? 1
                                         : layout.columnCount);
                                 final innerWidth =
-                                    (dayWidth - 8).clamp(40.0, 9999.0);
+                                    (dayWidth - 12).clamp(56.0, 9999.0);
                                 final rawColumnWidth = innerWidth / columns;
-                                final eventWidth = (rawColumnWidth - 4)
-                                    .clamp(30.0, innerWidth)
+                                final eventWidth = (rawColumnWidth - 6)
+                                    .clamp(52.0, innerWidth)
                                     .toDouble();
                                 final startLabel = _hhmmFromMinutes(
                                     visualStartMinute.clamp(0, 24 * 60 - 1));
@@ -2576,7 +2334,8 @@ class ReportsScreenState extends State<ReportsScreen> {
                                         .clamp(0, 24 * 60 - 1));
                                 final reminderLabel = _todoReminderLocal(todo);
                                 final overdue = _todoIsOverdue(todo);
-                                final compact = blockHeight < 46;
+                                final compact =
+                                    blockHeight < 60 || eventWidth < 110;
                                 final accent = overdue
                                     ? scheme.error
                                     : todo.done
@@ -2923,13 +2682,6 @@ class ReportsScreenState extends State<ReportsScreen> {
                         fontWeight: FontWeight.w700,
                       ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  "Tasks in this week without a time slot.",
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
                 const SizedBox(height: RecorderTokens.space2),
                 Wrap(
                   spacing: RecorderTokens.space2,
@@ -3036,7 +2788,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                 final openCount = list.where((t) => !t.done).length;
                 final isToday = _isSameDay(day, today);
                 final isSelected = _isSameDay(day, _todoAnchorDay);
-                final visibleTodos = list.take(3).toList();
+                final visibleTodos = list.take(2).toList();
                 final remaining = list.length - visibleTodos.length;
                 final cellBg = isSelected
                     ? scheme.primaryContainer.withValues(alpha: 0.50)
@@ -3145,7 +2897,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                                         alignment: Alignment.topLeft,
                                         child: Text(
                                           isSelected && inMonth
-                                              ? "Select again for week"
+                                              ? "Open week"
                                               : "",
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
@@ -3331,17 +3083,15 @@ class ReportsScreenState extends State<ReportsScreen> {
     final hasQuery = _todoSearch.text.trim().isNotEmpty;
     final noResult =
         open.isEmpty && done.isEmpty && (_todos.isNotEmpty || hasQuery);
-    final showAllDone = hasQuery ||
-        _todoListFilter == _TodoListFilter.done ||
-        done.length <= 12;
-    final doneVisible = showAllDone ? done : done.take(12).toList();
+    final showAllDone = hasQuery || done.length <= 8;
+    final doneVisible = showAllDone ? done : done.take(8).toList();
 
     final searchField = TextField(
       controller: _todoSearch,
       onChanged: (_) => setState(() {}),
       decoration: InputDecoration(
         prefixIcon: const Icon(Icons.search),
-        hintText: "Search TODO / date",
+        hintText: "Search tasks",
         suffixIcon: _todoSearch.text.trim().isEmpty
             ? null
             : IconButton(
@@ -3352,89 +3102,14 @@ class ReportsScreenState extends State<ReportsScreen> {
       ),
     );
 
-    final sortMenu = PopupMenuButton<_TodoListSort>(
-      initialValue: _todoListSort,
-      tooltip: "Sort",
-      onSelected: (value) => setState(() => _todoListSort = value),
-      itemBuilder: (context) => [
-        for (final sort in _TodoListSort.values)
-          PopupMenuItem<_TodoListSort>(
-            value: sort,
-            child: Row(
-              children: [
-                if (_todoListSort == sort)
-                  Icon(Icons.check, size: 16, color: scheme.primary)
-                else
-                  const SizedBox(width: 16),
-                const SizedBox(width: 8),
-                Text(_todoListSortLabel(sort)),
-              ],
-            ),
-          ),
-      ],
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: scheme.outline.withValues(alpha: 0.18)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.sort, size: 16),
-            const SizedBox(width: 6),
-            Text(
-              _todoListSortLabel(_todoListSort),
-              style: Theme.of(context).textTheme.labelMedium,
-            ),
-          ],
-        ),
-      ),
-    );
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            if (constraints.maxWidth < 680) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  searchField,
-                  const SizedBox(height: RecorderTokens.space2),
-                  Align(alignment: Alignment.centerRight, child: sortMenu),
-                ],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: searchField),
-                const SizedBox(width: RecorderTokens.space2),
-                sortMenu,
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: RecorderTokens.space2),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final filter in _TodoListFilter.values)
-              ChoiceChip(
-                label: Text(_todoListFilterLabel(filter)),
-                selected: _todoListFilter == filter,
-                onSelected: (_) => setState(() => _todoListFilter = filter),
-              ),
-          ],
-        ),
+        searchField,
         const SizedBox(height: RecorderTokens.space2),
         if (_todos.isEmpty)
           Text(
-            "No TODO yet. Use New TODO in the header.",
+            "No tasks yet.",
             style: Theme.of(context)
                 .textTheme
                 .labelMedium
@@ -3442,7 +3117,7 @@ class ReportsScreenState extends State<ReportsScreen> {
           )
         else if (noResult)
           Text(
-            "No TODO matches current filter/search.",
+            "No matching tasks.",
             style: Theme.of(context)
                 .textTheme
                 .labelMedium
@@ -3455,7 +3130,6 @@ class ReportsScreenState extends State<ReportsScreen> {
               title: "Overdue",
               todos: overdue,
               accent: scheme.error,
-              note: "Needs attention first.",
             ),
           if (today.isNotEmpty)
             _todoSectionCard(
@@ -3463,7 +3137,6 @@ class ReportsScreenState extends State<ReportsScreen> {
               title: "Today",
               todos: today,
               accent: scheme.primary,
-              note: "Current day focus.",
             ),
           if (scheduled.isNotEmpty)
             _todoSectionCard(
@@ -3471,7 +3144,6 @@ class ReportsScreenState extends State<ReportsScreen> {
               title: "Upcoming",
               todos: scheduled,
               accent: scheme.secondary,
-              note: "Scheduled later in the timeline.",
             ),
           if (backlog.isNotEmpty)
             _todoSectionCard(
@@ -3479,7 +3151,6 @@ class ReportsScreenState extends State<ReportsScreen> {
               title: "Backlog",
               todos: backlog,
               accent: scheme.tertiary,
-              note: "Task list without a time slot.",
             ),
           if (done.isNotEmpty) ...[
             _todoSectionCard(
@@ -3487,9 +3158,6 @@ class ReportsScreenState extends State<ReportsScreen> {
               title: "Done",
               todos: doneVisible,
               accent: scheme.onSurfaceVariant,
-              note: showAllDone
-                  ? "Completed items."
-                  : "Showing latest ${doneVisible.length} completed items.",
             ),
           ],
         ],
@@ -3511,8 +3179,6 @@ class ReportsScreenState extends State<ReportsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _calendarOverviewCard(context),
-        const SizedBox(height: RecorderTokens.space2),
         Container(
           decoration: BoxDecoration(
             color: scheme.surfaceContainerLowest,
@@ -3582,17 +3248,6 @@ class ReportsScreenState extends State<ReportsScreen> {
                   ],
                 ),
               );
-              final openWeekButton = _todoCalendarView ==
-                      _TodoCalendarView.month
-                  ? OutlinedButton.icon(
-                      onPressed: _todoBusy
-                          ? null
-                          : () => setState(
-                              () => _todoCalendarView = _TodoCalendarView.week),
-                      icon: const Icon(Icons.view_week_outlined, size: 18),
-                      label: const Text("Open week"),
-                    )
-                  : null;
               final addButton = FilledButton.icon(
                 onPressed: _todoBusy
                     ? null
@@ -3604,14 +3259,6 @@ class ReportsScreenState extends State<ReportsScreen> {
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text("New task"),
               );
-              final hintText = Text(
-                _todoCalendarView == _TodoCalendarView.week
-                    ? "Click empty slots to create. Drag blocks to reschedule."
-                    : "Click a day to select it. Click the selected day again to open week.",
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-              );
 
               if (compact) {
                 return Column(
@@ -3621,13 +3268,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                     const SizedBox(height: RecorderTokens.space2),
                     rangeNavigator,
                     const SizedBox(height: RecorderTokens.space2),
-                    if (openWeekButton != null) ...[
-                      openWeekButton,
-                      const SizedBox(height: RecorderTokens.space2),
-                    ],
                     addButton,
-                    const SizedBox(height: RecorderTokens.space2),
-                    hintText,
                   ],
                 );
               }
@@ -3640,15 +3281,9 @@ class ReportsScreenState extends State<ReportsScreen> {
                       calendarModeSwitch,
                       const SizedBox(width: RecorderTokens.space2),
                       Expanded(child: rangeNavigator),
-                      if (openWeekButton != null) ...[
-                        openWeekButton,
-                        const SizedBox(width: RecorderTokens.space2),
-                      ],
                       addButton,
                     ],
                   ),
-                  const SizedBox(height: RecorderTokens.space2),
-                  hintText,
                 ],
               );
             },
@@ -3735,18 +3370,8 @@ class ReportsScreenState extends State<ReportsScreen> {
                         "Planner",
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _plannerDimension == _PlannerDimension.todo
-                            ? "Windows Todo style task lists with clean sections."
-                            : "Google Calendar style schedule with a focused day agenda.",
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelMedium
-                            ?.copyWith(color: scheme.onSurfaceVariant),
-                      ),
                       if (_lastRefreshedAt != null) ...[
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 4),
                         Text(
                           _updatedAgoText(_lastRefreshedAt),
                           style: Theme.of(context)
