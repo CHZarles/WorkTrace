@@ -236,6 +236,18 @@ function Build-Installer {
   if (-not (Test-Path $setupPath)) {
     throw "Installer output not found: $setupPath"
   }
+
+  # Keep the new WorkTrace installer filename, but also emit the legacy
+  # filename expected by the current GitHub release workflow.
+  $legacySetupPath = Join-Path $OutputDir "RecorderPhone-Setup.exe"
+  if ($setupPath -ne $legacySetupPath) {
+    if (Test-Path $legacySetupPath) {
+      Remove-Item -Force $legacySetupPath
+    }
+    Copy-Item -Force $setupPath $legacySetupPath
+    Write-Host "[package] compatibility copy -> $legacySetupPath"
+  }
+
   return $setupPath
 }
 
