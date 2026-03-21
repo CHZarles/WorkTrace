@@ -42,7 +42,6 @@ class _AppShellState extends State<AppShell> with WindowListener {
   final _todayKey = GlobalKey<TodayScreenState>();
   final _searchKey = GlobalKey<SearchScreenState>();
   final _plannerKey = GlobalKey<ReportsScreenState>();
-  final _reportsKey = GlobalKey<ReportsScreenState>();
   final _settingsKey = GlobalKey<SettingsScreenState>();
   final _tutorialNavRailKey = GlobalKey();
   final _tutorialBottomNavKey = GlobalKey();
@@ -125,9 +124,6 @@ class _AppShellState extends State<AppShell> with WindowListener {
           await _plannerKey.currentState?.refresh(silent: true);
           break;
         case 3:
-          await _reportsKey.currentState?.refresh(silent: true);
-          break;
-        case 4:
           await _settingsKey.currentState?.refresh();
           break;
       }
@@ -256,7 +252,6 @@ class _AppShellState extends State<AppShell> with WindowListener {
       _todayKey.currentState?.refresh(silent: true, triggerReminder: true);
       _searchKey.currentState?.refresh(silent: true);
       _plannerKey.currentState?.refresh(silent: true);
-      _reportsKey.currentState?.refresh(silent: true);
     });
   }
 
@@ -310,7 +305,7 @@ class _AppShellState extends State<AppShell> with WindowListener {
           content: Text("Update available: $tag"),
           action: SnackBarAction(
             label: "Open Settings",
-            onPressed: () => _setIndex(4),
+            onPressed: () => _setIndex(3),
           ),
         ),
       );
@@ -597,7 +592,7 @@ class _AppShellState extends State<AppShell> with WindowListener {
           TutorialStep(
             title: "页面导航",
             body:
-                "这里是页面导航：\n- Today：今日概览（Now + 时间轴）\n- Review：复盘你的 Block\n- Planner：日程与待办（日/周/月）\n- Reports：日报/周报导出\n- Settings：隐私/提醒/更新\n\n你可以随时点击右上角“？”重新打开教程。",
+                "这里是页面导航：\n- Today：今日概览（Now + 时间轴）\n- Review：复盘你的 Block\n- Planner：日程与待办（日/周/月）\n- Settings：隐私/提醒/更新\n\n你可以随时点击右上角“？”重新打开教程。",
             targetKey: navKey,
             targetHint: "用这里切换页面",
             allowInteraction: true,
@@ -653,7 +648,7 @@ class _AppShellState extends State<AppShell> with WindowListener {
             targetHint: "建议选 L2",
             allowInteraction: true,
             beforeShow: () async {
-              await _goToTab(4);
+              await _goToTab(3);
               await _settingsKey.currentState?.scrollToTutorialPrivacy();
             },
           ),
@@ -703,7 +698,7 @@ class _AppShellState extends State<AppShell> with WindowListener {
         serverUrl: _serverUrl,
         isActive: _index == 0,
         onOpenReview: () => _setIndex(1),
-        onOpenSettings: () => _setIndex(4),
+        onOpenSettings: () => _setIndex(3),
         tutorialNowKey: _tutorialNowKey,
         tutorialTimelineKey: _tutorialTimelineKey,
         onOpenReviewQuery: (q, day) async {
@@ -726,23 +721,16 @@ class _AppShellState extends State<AppShell> with WindowListener {
         key: _plannerKey,
         client: _client,
         serverUrl: _serverUrl,
-        onOpenSettings: () => _setIndex(4),
+        onOpenSettings: () => _setIndex(3),
         isActive: _index == 2,
         plannerMode: true,
-      ),
-      ReportsScreen(
-        key: _reportsKey,
-        client: _client,
-        serverUrl: _serverUrl,
-        onOpenSettings: () => _setIndex(4),
-        isActive: _index == 3,
       ),
       SettingsScreen(
         key: _settingsKey,
         client: _client,
         serverUrl: _serverUrl,
         onServerUrlChanged: _setServerUrl,
-        isActive: _index == 4,
+        isActive: _index == 3,
         onOpenTutorial: _openTutorial,
         tutorialPrivacyKey: _tutorialPrivacyKey,
       ),
@@ -913,11 +901,6 @@ class _AppShellState extends State<AppShell> with WindowListener {
                             label: Text("Planner"),
                           ),
                           NavigationRailDestination(
-                            icon: Icon(Icons.article_outlined),
-                            selectedIcon: Icon(Icons.article),
-                            label: Text("Reports"),
-                          ),
-                          NavigationRailDestination(
                             icon: Icon(Icons.settings_outlined),
                             selectedIcon: Icon(Icons.settings),
                             label: Text("Settings"),
@@ -1002,11 +985,6 @@ class _AppShellState extends State<AppShell> with WindowListener {
             icon: Icon(Icons.calendar_month_outlined),
             selectedIcon: Icon(Icons.calendar_month),
             label: "Planner",
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.article_outlined),
-            selectedIcon: Icon(Icons.article),
-            label: "Reports",
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),

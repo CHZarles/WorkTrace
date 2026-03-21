@@ -128,6 +128,7 @@ class _TimelineViewState {
 class TodayScreenState extends State<TodayScreen> {
   static const _prefSnoozeUntilMs = "reviewSnoozeUntilMs";
   static const _prefSnoozeBlockId = "reviewSnoozeBlockId";
+  static const _reviewLastBlockEndGraceSeconds = 30;
 
   static const _nowPollSeconds = 5;
   static const _blocksPollSeconds = 60;
@@ -172,6 +173,7 @@ class TodayScreenState extends State<TodayScreen> {
   bool _promptShowing = false;
   bool _refreshingNow = false;
   bool _refreshingBlocks = false;
+  bool _timelineLoading = false;
   bool _timelineShowAll = false;
   bool _timelineSortByTime = false;
   double _timelineZoom = 1.0;
@@ -184,6 +186,9 @@ class TodayScreenState extends State<TodayScreen> {
   DateTime? _lastAutoBlocksRefreshAt;
   int? _snoozeUntilMs;
   String? _snoozeBlockId;
+  String? _loadedDayKey;
+  String? _timelineDayKey;
+  int _timelineRequestSeq = 0;
 
   bool _rulesLoading = true;
   final Map<String, int> _ruleIdByKey = {};
@@ -441,6 +446,132 @@ class TodayScreenState extends State<TodayScreen> {
         r.tags.isNotEmpty;
   }
 
+  BlockSummary? _computeDueBlock(List<BlockSummary> blocks) {
+    if (!_viewingToday() || blocks.isEmpty) return null;
+
+    final now = DateTime.now();
+    final minSeconds = _reviewMinSecondsSafe();
+    final blockSeconds = _blockLengthSecondsSafe();
+
+    for (var i = blocks.length - 1; i >= 0; i--) {
+      final block = blocks[i];
+      if (block.totalSeconds < minSeconds) continue;
+      if (_isReviewed(block)) continue;
+
+      final hasNext = i < blocks.length - 1;
+      if (hasNext) return block;
+
+      if (block.totalSeconds >= blockSeconds) return block;
+
+      final end = DateTime.tryParse(block.endTs)?.toLocal();
+      if (end == null) continue;
+      if (now.difference(end).inSeconds > _reviewLastBlockEndGraceSeconds) {
+        return block;
+      }
+    }
+
+    return null;
+  }
+
+  _TopAgg _buildTopAggFromBlocks() {
+    final accSeconds = <String, int>{};
+    final accHasAudio = <String, bool>{};
+    final accKind = <String, String>{};
+    final accEntity = <String, String>{};
+    final accLabel = <String, String>{};
+    final accSubtitle = <String, String?>{};
+
+    var focusSeconds = 0;
+    var audioSeconds = 0;
+    var longestFocusStreakSeconds = 0;
+
+    void addItem(TopItem it, {required bool hasAudio}) {
+      final kind = it.kind == "domain" ? "domain" : "app";
+      final rawEntity = it.entity.trim();
+      if (rawEntity.isEmpty) return;
+
+      final entity = kind == "domain" ? rawEntity.toLowerCase() : rawEntity;
+      final label = displayTopItemName(it).trim();
+      if (label.isEmpty) return;
+
+      String? subtitle;
+      if (kind == "domain") {
+        final domainLabel = displayEntity(entity);
+        if (label.toLowerCase() != domainLabel.toLowerCase()) {
+          subtitle = domainLabel;
+        }
+      } else if (_coreStoreTitles) {
+        final title = (it.title ?? "").trim();
+        if (title.isNotEmpty) {
+          final appLabel = displayEntity(entity);
+          if (!_isBrowserLabel(appLabel)) {
+            final appLc = appLabel.toLowerCase();
+            final isVscode = appLc == "code" ||
+                appLc == "vscode" ||
+                title.contains("Visual Studio Code");
+            if (isVscode) {
+              final ws = extractVscodeWorkspace(title);
+              subtitle = (ws != null && ws.trim().isNotEmpty)
+                  ? "Workspace: ${ws.trim()}"
+                  : title;
+            } else {
+              subtitle = title;
+            }
+          }
+        }
+      }
+
+      final key = "$kind|$entity|$label";
+      accSeconds[key] = (accSeconds[key] ?? 0) + it.seconds;
+      accHasAudio[key] = (accHasAudio[key] ?? false) || hasAudio;
+      accKind[key] = kind;
+      accEntity[key] = entity;
+      accLabel[key] = label;
+      accSubtitle[key] = subtitle;
+    }
+
+    for (final block in _blocks) {
+      focusSeconds += block.totalSeconds;
+      if (block.totalSeconds > longestFocusStreakSeconds) {
+        longestFocusStreakSeconds = block.totalSeconds;
+      }
+      for (final item in block.topItems) {
+        addItem(item, hasAudio: false);
+      }
+
+      final bgSeconds = block.backgroundSeconds ?? 0;
+      if (bgSeconds > 0) {
+        audioSeconds += bgSeconds;
+      }
+      for (final item in block.backgroundTopItems) {
+        addItem(item, hasAudio: true);
+      }
+    }
+
+    final items = <_StatItem>[];
+    for (final key in accSeconds.keys) {
+      items.add(
+        _StatItem(
+          kind: accKind[key] ?? "",
+          entity: accEntity[key] ?? "",
+          label: accLabel[key] ?? "",
+          subtitle: accSubtitle[key],
+          seconds: accSeconds[key] ?? 0,
+          hasAudio: accHasAudio[key] ?? false,
+        ),
+      );
+    }
+    items.sort((a, b) => b.seconds.compareTo(a.seconds));
+
+    return _TopAgg(
+      focusSeconds: focusSeconds,
+      audioSeconds: audioSeconds,
+      items: items,
+      focusSwitches: 0,
+      longestFocusStreakSeconds: longestFocusStreakSeconds,
+    );
+  }
+
   Future<void> _loadReminderPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -469,6 +600,7 @@ class TodayScreenState extends State<TodayScreen> {
         _reviewMinSeconds = s.reviewMinSeconds;
         _reviewRepeatMinutes = s.reviewNotifyRepeatMinutes;
         _reviewNotifyWhenPaused = s.reviewNotifyWhenPaused;
+        _dueBlock = _computeDueBlock(_blocks);
         _coreSettingsUpdatedAt = DateTime.now();
       });
     } catch (_) {
@@ -712,6 +844,10 @@ class TodayScreenState extends State<TodayScreen> {
   }
 
   _TopAgg _buildTopAgg() {
+    if (_segments.isEmpty) {
+      return _buildTopAggFromBlocks();
+    }
+
     final accSeconds = <String, int>{};
     final accHasAudio = <String, bool>{};
     final accKind = <String, String>{};
@@ -1178,6 +1314,56 @@ class TodayScreenState extends State<TodayScreen> {
     }
   }
 
+  Future<void> _refreshTimeline({required DateTime day}) async {
+    final date = _dateLocal(day);
+    final tzOffsetMinutes = _tzOffsetMinutesForDay(day);
+    final requestSeq = ++_timelineRequestSeq;
+
+    if (mounted) {
+      setState(() {
+        _timelineLoading = true;
+      });
+    }
+
+    try {
+      final segments = await widget.client.timelineDay(
+        date: date,
+        tzOffsetMinutes: tzOffsetMinutes,
+      );
+      if (!mounted) return;
+      if (requestSeq != _timelineRequestSeq) return;
+      if (!_isSameDay(_normalizeDay(day), _normalizeDay(_day))) return;
+
+      final hasWebSeg = segments.any((s) => s.kind == "domain");
+      final hasWebTitleSeg = segments.any(
+        (s) => s.kind == "domain" && (s.title ?? "").trim().isNotEmpty,
+      );
+
+      setState(() {
+        _segments = segments;
+        _segmentsVersion += 1;
+        _hasWebSeg = hasWebSeg;
+        _hasWebTitleSeg = hasWebTitleSeg;
+        _timelineDayKey = date;
+        _timelineLoading = false;
+        _topAggCacheKey = "";
+        _topAggCache = null;
+        _timelineCacheKey = "";
+        _timelineCache = null;
+        _flowCacheKey = "";
+        _flowCache = null;
+        _dayTimelineWidgetKey = "";
+        _dayTimelineWidgetCache = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      if (requestSeq != _timelineRequestSeq) return;
+      setState(() {
+        _timelineLoading = false;
+      });
+    }
+  }
+
   Future<void> _refreshBlocks(
       {bool silent = false, bool triggerReminder = false}) async {
     if (_refreshingBlocks) return;
@@ -1203,48 +1389,41 @@ class TodayScreenState extends State<TodayScreen> {
       final date = _dateLocal(_day);
       final tzOffsetMinutes = _tzOffsetMinutesForDay(_day);
       final viewingToday = _viewingToday();
+      final shouldClearTimeline = _timelineDayKey != date;
 
-      final blocksFuture = widget.client.blocksToday(
+      final blocks = await widget.client.blocksToday(
         date: date,
         tzOffsetMinutes: tzOffsetMinutes,
       );
-      final segmentsFuture = widget.client
-          .timelineDay(date: date, tzOffsetMinutes: tzOffsetMinutes);
-      final dueFuture = viewingToday
-          ? widget.client
-              .blocksDue(date: date, tzOffsetMinutes: tzOffsetMinutes)
-          : Future<BlockSummary?>.value(null);
-
-      final blocks = await blocksFuture;
-      final segments = await segmentsFuture;
-      final due = await dueFuture;
       if (!mounted) return;
-      final hasWebSeg = segments.any((s) => s.kind == "domain");
-      final hasWebTitleSeg = segments.any(
-        (s) => s.kind == "domain" && (s.title ?? "").trim().isNotEmpty,
-      );
+      final due = viewingToday ? _computeDueBlock(blocks) : null;
       setState(() {
-        _segments = segments;
-        _segmentsVersion += 1;
-        _hasWebSeg = hasWebSeg;
-        _hasWebTitleSeg = hasWebTitleSeg;
         _blocks = blocks;
         _dueBlock = due;
         _blocksUpdatedAt = DateTime.now();
+        _loadedDayKey = date;
         _error = null;
         _topAggCacheKey = "";
         _topAggCache = null;
-        _timelineCacheKey = "";
-        _timelineCache = null;
-        _flowCacheKey = "";
-        _flowCache = null;
-        _dayTimelineWidgetKey = "";
-        _dayTimelineWidgetCache = null;
+        if (shouldClearTimeline) {
+          _segments = const [];
+          _segmentsVersion += 1;
+          _hasWebSeg = false;
+          _hasWebTitleSeg = false;
+          _timelineDayKey = null;
+          _timelineCacheKey = "";
+          _timelineCache = null;
+          _flowCacheKey = "";
+          _flowCache = null;
+          _dayTimelineWidgetKey = "";
+          _dayTimelineWidgetCache = null;
+        }
       });
       _autoRetryAttempts = 0;
       if (triggerReminder && viewingToday && due != null) {
         await _maybePromptDueBlock(due);
       }
+      unawaited(_refreshTimeline(day: _normalizeDay(_day)));
     } catch (e) {
       if (!mounted) return;
       final msg = e.toString();
@@ -2446,6 +2625,7 @@ class TodayScreenState extends State<TodayScreen> {
 
   Widget _flowCard(BuildContext context) {
     final latestFirst = _flowItemsCached();
+    final timelinePending = _timelineLoading && _segments.isEmpty;
 
     return Card(
       child: Padding(
@@ -2466,7 +2646,24 @@ class TodayScreenState extends State<TodayScreen> {
               ],
             ),
             const SizedBox(height: RecorderTokens.space2),
-            if (latestFirst.isEmpty)
+            if (timelinePending)
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: RecorderTokens.space2),
+                  Expanded(
+                    child: Text(
+                      "Loading recent flow…",
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              )
+            else if (latestFirst.isEmpty)
               Text(
                 "No focus activity yet.\nTip: switch apps or tabs to generate events.",
                 style: Theme.of(context).textTheme.bodyMedium,
@@ -2545,6 +2742,7 @@ class TodayScreenState extends State<TodayScreen> {
     final hasWebSeg = _hasWebSeg;
     final hasWebTitleSeg = _hasWebTitleSeg;
     final canScrollH = _timelineZoom > 1.01;
+    final timelinePending = _timelineLoading && lanes.isEmpty;
 
     return Card(
       child: Padding(
@@ -2625,24 +2823,60 @@ class TodayScreenState extends State<TodayScreen> {
               ],
             ),
             const SizedBox(height: RecorderTokens.space2),
-            Listener(
-              key: widget.tutorialTimelineKey,
-              onPointerSignal: (e) {
-                if (e is! PointerScrollEvent) return;
-                if (!HardwareKeyboard.instance.isControlPressed) return;
-                GestureBinding.instance.pointerSignalResolver.register(e, (_) {
-                  final dy = e.scrollDelta.dy;
-                  if (dy == 0) return;
-                  final factor = dy < 0 ? 1.10 : 0.90;
-                  _setTimelineZoom(_timelineZoom * factor);
-                });
-              },
-              child: _dayTimelineWidgetCached(
-                context: context,
-                lanes: lanes,
-                viewingToday: viewingToday,
+            if (timelinePending)
+              Container(
+                key: widget.tutorialTimelineKey,
+                padding: const EdgeInsets.symmetric(
+                  vertical: RecorderTokens.space5,
+                  horizontal: RecorderTokens.space3,
+                ),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                  borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
+                  border: Border.all(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .outline
+                        .withValues(alpha: 0.10),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    ),
+                    const SizedBox(width: RecorderTokens.space3),
+                    Expanded(
+                      child: Text(
+                        "Timeline is loading in the background…",
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Listener(
+                key: widget.tutorialTimelineKey,
+                onPointerSignal: (e) {
+                  if (e is! PointerScrollEvent) return;
+                  if (!HardwareKeyboard.instance.isControlPressed) return;
+                  GestureBinding.instance.pointerSignalResolver.register(e,
+                      (_) {
+                    final dy = e.scrollDelta.dy;
+                    if (dy == 0) return;
+                    final factor = dy < 0 ? 1.10 : 0.90;
+                    _setTimelineZoom(_timelineZoom * factor);
+                  });
+                },
+                child: _dayTimelineWidgetCached(
+                  context: context,
+                  lanes: lanes,
+                  viewingToday: viewingToday,
+                ),
               ),
-            ),
             if (lanes.isNotEmpty) ...[
               const SizedBox(height: RecorderTokens.space2),
               Row(
@@ -2969,8 +3203,16 @@ class TodayScreenState extends State<TodayScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_error != null) {
+    final currentDayKey = _dateLocal(_day);
+    final hasCurrentContent = _loadedDayKey == currentDayKey &&
+        (_blocksUpdatedAt != null ||
+            _blocks.isNotEmpty ||
+            _segments.isNotEmpty);
+
+    if (_loading && !hasCurrentContent) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null && !hasCurrentContent) {
       return _ErrorState(
         serverUrl: widget.serverUrl,
         error: _error!,
