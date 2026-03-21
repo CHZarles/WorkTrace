@@ -33,6 +33,12 @@ class BlockCard extends StatelessWidget {
     this.selectionMode = false,
     this.selected = false,
     this.onSelectedChanged,
+    this.emphasisLabel,
+    this.emphasisIcon,
+    this.emphasisColor,
+    this.helperText,
+    this.footer,
+    this.highlight = false,
   });
 
   final BlockSummary block;
@@ -42,6 +48,12 @@ class BlockCard extends StatelessWidget {
   final bool selectionMode;
   final bool selected;
   final ValueChanged<bool>? onSelectedChanged;
+  final String? emphasisLabel;
+  final IconData? emphasisIcon;
+  final Color? emphasisColor;
+  final String? helperText;
+  final Widget? footer;
+  final bool highlight;
 
   bool _hasReview(BlockReview? r) {
     if (r == null) return false;
@@ -70,21 +82,93 @@ class BlockCard extends StatelessWidget {
     return "";
   }
 
+  Widget _metaPill(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    Color? bgColor,
+    Color? fgColor,
+    Color? borderColor,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final resolvedBg = bgColor ?? scheme.surfaceContainerHighest;
+    final resolvedFg = fgColor ?? scheme.onSurfaceVariant;
+    final resolvedBorder =
+        borderColor ?? scheme.outline.withValues(alpha: 0.12);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: RecorderTokens.space2,
+        vertical: RecorderTokens.space1,
+      ),
+      decoration: BoxDecoration(
+        color: resolvedBg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: resolvedBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: resolvedFg),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: resolvedFg,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final title = "${formatHHMM(block.startTs)}–${formatHHMM(block.endTs)}";
-    final bg = block.backgroundTopItems;
-    final bgTop = bg.isEmpty ? null : bg.first;
     final hasReview = _hasReview(block.review);
     final skipped = block.review?.skipped == true;
     final preview = block.review == null ? "" : _preview(block.review!);
+    final accent = emphasisColor ??
+        (highlight
+            ? scheme.primary
+            : selected
+                ? scheme.primary
+                : scheme.outline);
+    final cardColor = selected
+        ? scheme.primaryContainer.withValues(alpha: 0.22)
+        : highlight
+            ? scheme.primaryContainer.withValues(alpha: 0.12)
+            : scheme.surfaceContainerLowest;
+    final borderColor = selected || highlight
+        ? accent.withValues(alpha: 0.22)
+        : scheme.outline.withValues(alpha: 0.14);
 
-    final (IconData statusIcon, Color statusColor, String statusTip) = skipped
-        ? (Icons.skip_next, scheme.onSurfaceVariant, "Skipped")
+    final (
+      IconData statusIcon,
+      Color statusColor,
+      String statusTip,
+      String statusLabel,
+    ) = skipped
+        ? (
+            Icons.skip_next,
+            scheme.onSurfaceVariant,
+            "Skipped",
+            "Skipped",
+          )
         : hasReview
-            ? (Icons.check_circle, scheme.primary, "Reviewed")
-            : (Icons.pending, scheme.onSurfaceVariant, "Needs review");
+            ? (
+                Icons.check_circle,
+                scheme.primary,
+                "Reviewed",
+                "Reviewed",
+              )
+            : (
+                Icons.pending_actions_outlined,
+                scheme.onSurfaceVariant,
+                "Needs review",
+                "Needs review",
+              );
 
     IconData iconForItem(BlockCardItem it) {
       if (it.audio) return Icons.headphones;
@@ -92,7 +176,7 @@ class BlockCard extends StatelessWidget {
       return Icons.apps_outlined;
     }
 
-    Widget pill(BlockCardItem it) {
+    Widget focusPill(BlockCardItem it) {
       final label = it.label.trim().isEmpty ? "(unknown)" : it.label.trim();
       final duration = formatDuration(it.seconds);
       return RecorderTooltip(
@@ -101,8 +185,9 @@ class BlockCard extends StatelessWidget {
             : "$label\n${it.subtitle}\n$duration",
         child: Container(
           padding: const EdgeInsets.symmetric(
-              horizontal: RecorderTokens.space2,
-              vertical: RecorderTokens.space1),
+            horizontal: RecorderTokens.space2,
+            vertical: RecorderTokens.space1,
+          ),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(999),
@@ -132,15 +217,22 @@ class BlockCard extends StatelessWidget {
 
     final focusItems =
         (previewFocus ?? const []).where((it) => !it.audio).toList();
-    final showFocusItems = focusItems.isNotEmpty;
     final topTextFallback = block.topItems
         .take(3)
         .map((e) => "${displayTopItemName(e)} ${formatDuration(e.seconds)}")
         .join(" · ");
 
     return Card(
+      margin: EdgeInsets.zero,
+      color: cardColor,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(RecorderTokens.radiusL),
+        side: BorderSide(color: borderColor),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
+        borderRadius: BorderRadius.circular(RecorderTokens.radiusL),
         onTap: selectionMode ? () => onSelectedChanged?.call(!selected) : onTap,
         onLongPress: selectionMode ? onTap : null,
         child: Padding(
@@ -149,11 +241,58 @@ class BlockCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Text(title,
-                        style: Theme.of(context).textTheme.titleMedium),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: RecorderTokens.space2,
+                          runSpacing: RecorderTokens.space2,
+                          children: [
+                            _metaPill(
+                              context,
+                              icon: Icons.schedule_outlined,
+                              label: formatDuration(block.totalSeconds),
+                            ),
+                            _metaPill(
+                              context,
+                              icon: statusIcon,
+                              label: statusLabel,
+                              bgColor: hasReview
+                                  ? scheme.primaryContainer
+                                      .withValues(alpha: 0.24)
+                                  : scheme.surfaceContainerHighest,
+                              fgColor: hasReview ? scheme.primary : statusColor,
+                              borderColor: hasReview
+                                  ? scheme.primary.withValues(alpha: 0.14)
+                                  : scheme.outline.withValues(alpha: 0.12),
+                            ),
+                            if ((emphasisLabel ?? "").trim().isNotEmpty)
+                              _metaPill(
+                                context,
+                                icon:
+                                    emphasisIcon ?? Icons.auto_awesome_outlined,
+                                label: emphasisLabel!.trim(),
+                                bgColor: accent.withValues(alpha: 0.10),
+                                fgColor: accent,
+                                borderColor: accent.withValues(alpha: 0.16),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: RecorderTokens.space2),
                   RecorderTooltip(
                     message: statusTip,
                     child: Icon(
@@ -171,53 +310,56 @@ class BlockCard extends StatelessWidget {
                   ],
                 ],
               ),
-              const SizedBox(height: RecorderTokens.space2),
-              if (showFocusItems)
+              const SizedBox(height: RecorderTokens.space3),
+              if (focusItems.isNotEmpty)
                 Wrap(
                   spacing: RecorderTokens.space2,
                   runSpacing: RecorderTokens.space2,
                   children: [
-                    for (final it in focusItems.take(4)) pill(it),
+                    for (final it in focusItems.take(4)) focusPill(it),
                   ],
                 )
               else
-                Text(topTextFallback,
-                    style: Theme.of(context).textTheme.bodyMedium),
-              if (previewAudioTop == null && bgTop != null) ...[
-                const SizedBox(height: RecorderTokens.space2),
-                Row(
-                  children: [
-                    Icon(Icons.headphones,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    const SizedBox(width: RecorderTokens.space1),
-                    Expanded(
-                      child: Text(
-                        "${displayTopItemName(bgTop)} ${formatDuration(bgTop.seconds)}",
-                        style: Theme.of(context).textTheme.labelMedium,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+                Text(
+                  topTextFallback,
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
-              ],
               if (previewAudioTop != null) ...[
                 const SizedBox(height: RecorderTokens.space2),
                 Wrap(
                   spacing: RecorderTokens.space2,
                   runSpacing: RecorderTokens.space2,
-                  children: [pill(previewAudioTop!)],
+                  children: [focusPill(previewAudioTop!)],
                 ),
               ],
-              if (hasReview) ...[
-                const SizedBox(height: RecorderTokens.space2),
+              if (preview.isNotEmpty) ...[
+                const SizedBox(height: RecorderTokens.space3),
                 Text(
                   preview,
-                  style: Theme.of(context).textTheme.bodyLarge,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
+              ],
+              if ((helperText ?? "").trim().isNotEmpty) ...[
+                const SizedBox(height: RecorderTokens.space2),
+                Text(
+                  helperText!.trim(),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+              if (footer != null) ...[
+                const SizedBox(height: RecorderTokens.space3),
+                Divider(
+                  height: 1,
+                  color: scheme.outline.withValues(alpha: 0.12),
+                ),
+                const SizedBox(height: RecorderTokens.space3),
+                footer!,
               ],
             ],
           ),

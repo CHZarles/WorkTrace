@@ -1775,6 +1775,467 @@ class ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  String _todoScheduleRangeLabel(ReportTodo todo) {
+    if (!_todoHasSchedule(todo)) return "No time";
+    final startMinute = _todoStartMinute(todo);
+    final endMinute = (startMinute + _todoDurationMinutes(todo))
+        .clamp(startMinute + 1, 24 * 60);
+    final endLabel =
+        endMinute == 24 * 60 ? "24:00" : _hhmmFromMinutes(endMinute);
+    return "${_hhmmFromMinutes(startMinute)}-$endLabel";
+  }
+
+  String _todoCalendarTooltip(ReportTodo todo) {
+    final parts = <String>[
+      todo.content,
+      "Day · ${_dateLocal(_todoDay(todo))}",
+      "Schedule · ${_todoScheduleRangeLabel(todo)}",
+    ];
+    final reminder = _todoReminderLocal(todo);
+    if (reminder != null) {
+      parts.add("Reminder · ${_todoReminderLabel(todo)}");
+    }
+    if (todo.done) {
+      parts.add("Status · Done");
+    } else if (_todoIsOverdue(todo)) {
+      parts.add("Status · Overdue");
+    }
+    return parts.join("\n");
+  }
+
+  List<ReportTodo> _todosForDayPanel(DateTime day) {
+    final target = _normalizeDay(day);
+    return _sortTodos(
+      _todos.where((todo) => _isSameDay(_todoDay(todo), target)),
+    );
+  }
+
+  List<ReportTodo> _todosForVisibleCalendarRange() {
+    if (_todoCalendarView == _TodoCalendarView.week) {
+      final start = _startOfWeekMonday(_todoAnchorDay);
+      final endExclusive = start.add(const Duration(days: 7));
+      return _sortTodos(
+        _todos.where((todo) {
+          final d = _todoDay(todo);
+          return !d.isBefore(start) && d.isBefore(endExclusive);
+        }),
+      );
+    }
+    return _todosForMonth(_todoAnchorDay);
+  }
+
+  Widget _plannerInfoPill(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    Color? bgColor,
+    Color? fgColor,
+    Color? borderColor,
+    bool compact = false,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final resolvedBg = bgColor ?? scheme.surfaceContainerLowest;
+    final resolvedFg = fgColor ?? scheme.onSurfaceVariant;
+    final resolvedBorder =
+        borderColor ?? scheme.outline.withValues(alpha: 0.16);
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 7 : 10,
+        vertical: compact ? 4 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: resolvedBg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: resolvedBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: compact ? 12 : 14, color: resolvedFg),
+          SizedBox(width: compact ? 4 : 6),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: resolvedFg,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _calendarOverviewCard(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final visible = _todosForVisibleCalendarRange();
+    final openCount = visible.where((todo) => !todo.done).length;
+    final scheduledCount =
+        visible.where((todo) => !todo.done && _todoHasSchedule(todo)).length;
+    final reminderCount = visible
+        .where((todo) => !todo.done && _todoReminderLocal(todo) != null)
+        .length;
+    final selectedDayCount = _todosForDayPanel(_todoAnchorDay).length;
+    final viewLabel = _todoCalendarView == _TodoCalendarView.week
+        ? "Week canvas"
+        : "Month board";
+
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
+      ),
+      padding: const EdgeInsets.all(RecorderTokens.space3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 720;
+              final titleBlock = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _todoRangeLabel(),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _todoRangeLoadText(),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              );
+              final pills = Wrap(
+                spacing: RecorderTokens.space2,
+                runSpacing: RecorderTokens.space2,
+                children: [
+                  _plannerInfoPill(
+                    context,
+                    icon: _todoCalendarView == _TodoCalendarView.week
+                        ? Icons.view_week_outlined
+                        : Icons.calendar_month_outlined,
+                    label: viewLabel,
+                    bgColor: scheme.primary.withValues(alpha: 0.10),
+                    fgColor: scheme.primary,
+                    borderColor: scheme.primary.withValues(alpha: 0.20),
+                  ),
+                  _plannerInfoPill(
+                    context,
+                    icon: Icons.adjust_outlined,
+                    label:
+                        "${_todoDayTitle(_todoAnchorDay)} · $selectedDayCount item${selectedDayCount == 1 ? "" : "s"}",
+                  ),
+                  _plannerInfoPill(
+                    context,
+                    icon: Icons.inbox_outlined,
+                    label: "$openCount open",
+                  ),
+                  _plannerInfoPill(
+                    context,
+                    icon: Icons.schedule_outlined,
+                    label: "$scheduledCount scheduled",
+                  ),
+                  if (reminderCount > 0)
+                    _plannerInfoPill(
+                      context,
+                      icon: Icons.alarm_outlined,
+                      label: "$reminderCount reminder",
+                      bgColor:
+                          scheme.secondaryContainer.withValues(alpha: 0.72),
+                      fgColor: scheme.secondary,
+                      borderColor: scheme.secondary.withValues(alpha: 0.18),
+                    ),
+                ],
+              );
+
+              if (compact) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    titleBlock,
+                    const SizedBox(height: RecorderTokens.space2),
+                    pills,
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: titleBlock),
+                  const SizedBox(width: RecorderTokens.space3),
+                  Flexible(
+                      child:
+                          Align(alignment: Alignment.topRight, child: pills)),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _calendarAgendaRow(BuildContext context, ReportTodo todo) {
+    final scheme = Theme.of(context).colorScheme;
+    final overdue = _todoIsOverdue(todo);
+    final hasSchedule = _todoHasSchedule(todo);
+    final reminder = _todoReminderLocal(todo);
+    final accent = overdue
+        ? scheme.error
+        : todo.done
+            ? scheme.outline
+            : hasSchedule
+                ? scheme.primary
+                : scheme.tertiary;
+    final fill = todo.done
+        ? scheme.surfaceContainerHighest
+        : overdue
+            ? scheme.errorContainer.withValues(alpha: 0.82)
+            : hasSchedule
+                ? scheme.primaryContainer.withValues(alpha: 0.72)
+                : scheme.tertiaryContainer.withValues(alpha: 0.72);
+
+    return RecorderTooltip(
+      message: _todoCalendarTooltip(todo),
+      preferBelow: false,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: _todoBusy ? null : () => _openTodoEditor(todo: todo),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: RecorderTokens.space2),
+              padding: const EdgeInsets.symmetric(
+                horizontal: RecorderTokens.space2,
+                vertical: RecorderTokens.space2,
+              ),
+              decoration: BoxDecoration(
+                color: fill,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: accent.withValues(alpha: 0.20)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 4,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  const SizedBox(width: RecorderTokens.space2),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            _plannerInfoPill(
+                              context,
+                              icon: hasSchedule
+                                  ? Icons.schedule_outlined
+                                  : Icons.pending_actions_outlined,
+                              label: hasSchedule
+                                  ? "${_todoScheduleRangeLabel(todo)} · ${_todoDurationMinutes(todo)}m"
+                                  : "No time",
+                              compact: true,
+                              bgColor: scheme.surface.withValues(alpha: 0.82),
+                              fgColor: accent,
+                              borderColor: accent.withValues(alpha: 0.18),
+                            ),
+                            if (reminder != null)
+                              _plannerInfoPill(
+                                context,
+                                icon: Icons.alarm_outlined,
+                                label: _hhmmFromDateTime(reminder),
+                                compact: true,
+                              ),
+                            if (overdue)
+                              _plannerInfoPill(
+                                context,
+                                icon: Icons.warning_amber_rounded,
+                                label: "Overdue",
+                                compact: true,
+                                bgColor: scheme.errorContainer,
+                                fgColor: scheme.error,
+                                borderColor:
+                                    scheme.error.withValues(alpha: 0.22),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          todo.content,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    decoration: todo.done
+                                        ? TextDecoration.lineThrough
+                                        : TextDecoration.none,
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: RecorderTokens.space1),
+                  IconButton(
+                    tooltip: todo.done ? "Mark open" : "Mark done",
+                    onPressed:
+                        _todoBusy ? null : () => _toggleTodo(todo, !todo.done),
+                    icon: Icon(
+                      todo.done
+                          ? Icons.check_circle
+                          : Icons.check_circle_outline,
+                      size: 20,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _calendarFocusDayCard(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final day = _normalizeDay(_todoAnchorDay);
+    final todos = _todosForDayPanel(day);
+    final openCount = todos.where((todo) => !todo.done).length;
+    final scheduledCount =
+        todos.where((todo) => !todo.done && _todoHasSchedule(todo)).length;
+    final reminderCount = todos
+        .where((todo) => !todo.done && _todoReminderLocal(todo) != null)
+        .length;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
+      ),
+      padding: const EdgeInsets.all(RecorderTokens.space3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 720;
+              final title = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Focus day",
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _todoDayTitle(day),
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              );
+              final addButton = OutlinedButton.icon(
+                onPressed: _todoBusy
+                    ? null
+                    : () => _openTodoEditor(
+                          suggestedDay: day,
+                          forceSchedule:
+                              _todoCalendarView == _TodoCalendarView.week,
+                        ),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text("Add for this day"),
+              );
+              if (compact) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    title,
+                    const SizedBox(height: RecorderTokens.space2),
+                    addButton,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: title),
+                  addButton,
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: RecorderTokens.space2),
+          Wrap(
+            spacing: RecorderTokens.space2,
+            runSpacing: RecorderTokens.space2,
+            children: [
+              _plannerInfoPill(
+                context,
+                icon: Icons.inbox_outlined,
+                label: "$openCount open",
+              ),
+              _plannerInfoPill(
+                context,
+                icon: Icons.schedule_outlined,
+                label: "$scheduledCount scheduled",
+              ),
+              if (reminderCount > 0)
+                _plannerInfoPill(
+                  context,
+                  icon: Icons.alarm_outlined,
+                  label: "$reminderCount reminder",
+                ),
+            ],
+          ),
+          const SizedBox(height: RecorderTokens.space3),
+          if (todos.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(RecorderTokens.space3),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border:
+                    Border.all(color: scheme.outline.withValues(alpha: 0.12)),
+              ),
+              child: Text(
+                "No TODO on this day yet. Add one from here, or click an empty slot in week view.",
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+            )
+          else
+            Column(
+              children: [
+                for (final todo in todos) _calendarAgendaRow(context, todo),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _todoWeekView(
     BuildContext context,
     DateTime day, {
@@ -1784,6 +2245,7 @@ class ReportsScreenState extends State<ReportsScreen> {
     final days = List.generate(7, (i) => start.add(Duration(days: i)));
     final endExclusive = start.add(const Duration(days: 7));
     final scheduledLayouts = _buildWeekLayouts(start);
+    final dayTodos = List.generate(7, (i) => _todosForDayPanel(days[i]));
     final unscheduled = _sortTodos(
       _todos.where((t) {
         if (_todoHasSchedule(t)) return false;
@@ -1792,20 +2254,25 @@ class ReportsScreenState extends State<ReportsScreen> {
       }),
     );
 
-    const leftAxisWidth = 56.0;
-    const headerHeight = 38.0;
+    const leftAxisWidth = 64.0;
+    const headerHeight = 58.0;
     final gridHeight = 24 * hourHeight;
     final today = _normalizeDay(DateTime.now());
+    final selectedDay = _normalizeDay(_todoAnchorDay);
     final now = DateTime.now();
     final todayIndex = (!today.isBefore(start) && today.isBefore(endExclusive))
         ? today.difference(start).inDays
         : -1;
     final nowMinute = now.hour * 60 + now.minute + now.second / 60.0;
+    final dragDayIndex = _dragCurrentDayIndex;
+    final dragMinute = _dragCurrentStartMinute;
+    final scheme = Theme.of(context).colorScheme;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
+        SizedBox(
+          height: headerHeight + gridHeight,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final dayWidth = (((constraints.maxWidth - leftAxisWidth) / 7)
@@ -1826,6 +2293,30 @@ class ReportsScreenState extends State<ReportsScreen> {
                       child: Stack(
                         children: [
                           for (var i = 0; i < 7; i++)
+                            if (days[i].weekday >= DateTime.saturday)
+                              Positioned(
+                                left: leftAxisWidth + i * dayWidth,
+                                top: 0,
+                                width: dayWidth,
+                                height: headerHeight + gridHeight,
+                                child: Container(
+                                  color:
+                                      scheme.secondary.withValues(alpha: 0.035),
+                                ),
+                              ),
+                          for (var i = 0; i < 7; i++)
+                            if (_isSameDay(days[i], selectedDay))
+                              Positioned(
+                                left: leftAxisWidth + i * dayWidth,
+                                top: 0,
+                                width: dayWidth,
+                                height: headerHeight + gridHeight,
+                                child: Container(
+                                  color:
+                                      scheme.secondary.withValues(alpha: 0.045),
+                                ),
+                              ),
+                          for (var i = 0; i < 7; i++)
                             if (_isSameDay(days[i], today))
                               Positioned(
                                 left: leftAxisWidth + i * dayWidth,
@@ -1833,10 +2324,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                                 width: dayWidth,
                                 height: headerHeight + gridHeight,
                                 child: Container(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withValues(alpha: 0.045),
+                                  color: scheme.primary.withValues(alpha: 0.05),
                                 ),
                               ),
                           for (var slot = 0; slot <= 48; slot++)
@@ -1847,11 +2335,8 @@ class ReportsScreenState extends State<ReportsScreen> {
                               child: Divider(
                                 height: 1,
                                 thickness: slot % 2 == 0 ? 1 : 0.7,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .outline
-                                    .withValues(
-                                        alpha: slot % 2 == 0 ? 0.12 : 0.07),
+                                color: scheme.outline.withValues(
+                                    alpha: slot % 2 == 0 ? 0.12 : 0.07),
                               ),
                             ),
                           for (var i = 0; i <= 7; i++)
@@ -1862,10 +2347,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                               child: VerticalDivider(
                                 width: 1,
                                 thickness: 1,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .outline
-                                    .withValues(alpha: 0.12),
+                                color: scheme.outline.withValues(alpha: 0.12),
                               ),
                             ),
                           for (var i = 0; i < 7; i++)
@@ -1874,45 +2356,167 @@ class ReportsScreenState extends State<ReportsScreen> {
                               top: 0,
                               width: dayWidth,
                               height: headerHeight,
-                              child: InkWell(
-                                onTap: () => setState(() {
-                                  _dragTodoId = null;
-                                  _dragOriginDayIndex = null;
-                                  _dragOriginStartMinute = null;
-                                  _dragCurrentDayIndex = null;
-                                  _dragCurrentStartMinute = null;
-                                  _dragDurationMinutes = null;
-                                  _dragStartGlobalPosition = null;
-                                  _todoAnchorDay = days[i];
-                                }),
-                                child: Center(
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: _isSameDay(days[i], today)
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .primaryContainer
-                                              .withValues(alpha: 0.75)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 2),
-                                    child: Text(
-                                      _todoDayTitle(days[i]),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelMedium
-                                          ?.copyWith(
-                                            color: _isSameDay(days[i], today)
-                                                ? Theme.of(context)
-                                                    .colorScheme
-                                                    .onPrimaryContainer
-                                                : null,
+                              child: Builder(
+                                builder: (context) {
+                                  final isToday = _isSameDay(days[i], today);
+                                  final isSelected =
+                                      _isSameDay(days[i], selectedDay);
+                                  final openCount = dayTodos[i]
+                                      .where((todo) => !todo.done)
+                                      .length;
+                                  final scheduledCount = dayTodos[i]
+                                      .where((todo) =>
+                                          !todo.done && _todoHasSchedule(todo))
+                                      .length;
+                                  final reminderCount = dayTodos[i]
+                                      .where((todo) =>
+                                          !todo.done &&
+                                          _todoReminderLocal(todo) != null)
+                                      .length;
+                                  final headerBg = isSelected
+                                      ? scheme.secondaryContainer
+                                          .withValues(alpha: 0.72)
+                                      : isToday
+                                          ? scheme.primaryContainer
+                                              .withValues(alpha: 0.72)
+                                          : scheme.surfaceContainerLowest
+                                              .withValues(alpha: 0.82);
+                                  final headerFg = isSelected
+                                      ? scheme.onSecondaryContainer
+                                      : isToday
+                                          ? scheme.onPrimaryContainer
+                                          : scheme.onSurface;
+                                  final headerBorder = isSelected
+                                      ? scheme.secondary.withValues(alpha: 0.24)
+                                      : isToday
+                                          ? scheme.primary
+                                              .withValues(alpha: 0.22)
+                                          : scheme.outline
+                                              .withValues(alpha: 0.14);
+
+                                  return RecorderTooltip(
+                                    message:
+                                        "${_todoDayTitle(days[i])}\n$openCount open · $scheduledCount scheduled${reminderCount > 0 ? "\n$reminderCount reminder" : ""}",
+                                    preferBelow: false,
+                                    child: MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: Material(
+                                        color: Colors.transparent,
+                                        child: InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          onTap: () => setState(() {
+                                            _dragTodoId = null;
+                                            _dragOriginDayIndex = null;
+                                            _dragOriginStartMinute = null;
+                                            _dragCurrentDayIndex = null;
+                                            _dragCurrentStartMinute = null;
+                                            _dragDurationMinutes = null;
+                                            _dragStartGlobalPosition = null;
+                                            _todoAnchorDay = days[i];
+                                          }),
+                                          child: Container(
+                                            margin: const EdgeInsets.fromLTRB(
+                                                4, 4, 4, 6),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: headerBg,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                  color: headerBorder),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Text(
+                                                  _weekdayLabel(
+                                                      days[i].weekday),
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .labelSmall
+                                                      ?.copyWith(
+                                                        color:
+                                                            headerFg.withValues(
+                                                                alpha: 0.86),
+                                                      ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  "${days[i].month.toString().padLeft(2, "0")}/${days[i].day.toString().padLeft(2, "0")}",
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .labelLarge
+                                                      ?.copyWith(
+                                                        color: headerFg,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Wrap(
+                                                  spacing: 4,
+                                                  runSpacing: 4,
+                                                  children: [
+                                                    if (openCount > 0)
+                                                      _plannerInfoPill(
+                                                        context,
+                                                        icon: Icons
+                                                            .inbox_outlined,
+                                                        label: "$openCount",
+                                                        compact: true,
+                                                        bgColor: scheme.surface
+                                                            .withValues(
+                                                                alpha: 0.86),
+                                                        fgColor: headerFg,
+                                                        borderColor:
+                                                            Colors.transparent,
+                                                      ),
+                                                    if (scheduledCount > 0)
+                                                      _plannerInfoPill(
+                                                        context,
+                                                        icon: Icons
+                                                            .schedule_outlined,
+                                                        label:
+                                                            "$scheduledCount",
+                                                        compact: true,
+                                                        bgColor: scheme.surface
+                                                            .withValues(
+                                                                alpha: 0.86),
+                                                        fgColor: headerFg,
+                                                        borderColor:
+                                                            Colors.transparent,
+                                                      ),
+                                                    if (reminderCount > 0)
+                                                      _plannerInfoPill(
+                                                        context,
+                                                        icon: Icons
+                                                            .alarm_outlined,
+                                                        label: "$reminderCount",
+                                                        compact: true,
+                                                        bgColor: scheme.surface
+                                                            .withValues(
+                                                                alpha: 0.86),
+                                                        fgColor: headerFg,
+                                                        borderColor:
+                                                            Colors.transparent,
+                                                      ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
                                           ),
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ),
+                                  );
+                                },
                               ),
                             ),
                           for (var i = 0; i < 7; i++)
@@ -1921,23 +2525,28 @@ class ReportsScreenState extends State<ReportsScreen> {
                               top: headerHeight,
                               width: dayWidth,
                               height: gridHeight,
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.translucent,
-                                onTapUp: _todoBusy
-                                    ? null
-                                    : (details) {
-                                        final minute = _snapToQuarterHour(
-                                          ((details.localPosition.dy /
-                                                      hourHeight) *
-                                                  60)
-                                              .round(),
-                                        ).clamp(0, 23 * 60 + 45);
-                                        _openTodoEditor(
-                                          suggestedDay: days[i],
-                                          suggestedStartMinute: minute,
-                                          forceSchedule: true,
-                                        );
-                                      },
+                              child: MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.translucent,
+                                  onTapUp: _todoBusy
+                                      ? null
+                                      : (details) async {
+                                          final minute = _snapToQuarterHour(
+                                            ((details.localPosition.dy /
+                                                        hourHeight) *
+                                                    60)
+                                                .round(),
+                                          ).clamp(0, 23 * 60 + 45);
+                                          setState(
+                                              () => _todoAnchorDay = days[i]);
+                                          await _openTodoEditor(
+                                            suggestedDay: days[i],
+                                            suggestedStartMinute: minute,
+                                            forceSchedule: true,
+                                          );
+                                        },
+                                ),
                               ),
                             ),
                           for (var h = 0; h < 24; h++)
@@ -1952,9 +2561,7 @@ class ReportsScreenState extends State<ReportsScreen> {
                                     .textTheme
                                     .labelSmall
                                     ?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
+                                      color: scheme.onSurfaceVariant,
                                     ),
                               ),
                             ),
@@ -1998,7 +2605,20 @@ class ReportsScreenState extends State<ReportsScreen> {
                                     (visualStartMinute + visualDurationMinute)
                                         .clamp(0, 24 * 60 - 1));
                                 final reminderLabel = _todoReminderLocal(todo);
+                                final overdue = _todoIsOverdue(todo);
                                 final compact = blockHeight < 46;
+                                final accent = overdue
+                                    ? scheme.error
+                                    : todo.done
+                                        ? scheme.outline
+                                        : scheme.primary;
+                                final fill = todo.done
+                                    ? scheme.surfaceContainerHighest
+                                    : overdue
+                                        ? scheme.errorContainer
+                                            .withValues(alpha: 0.86)
+                                        : scheme.primaryContainer
+                                            .withValues(alpha: 0.88);
                                 return Positioned(
                                   left: leftAxisWidth +
                                       visualDayIndex * dayWidth +
@@ -2010,151 +2630,218 @@ class ReportsScreenState extends State<ReportsScreen> {
                                   top: top,
                                   width: eventWidth,
                                   height: blockHeight,
-                                  child: GestureDetector(
-                                    onTap: _todoBusy
-                                        ? null
-                                        : () => _openTodoEditor(todo: todo),
-                                    onPanStart: _todoBusy
-                                        ? null
-                                        : (details) => _beginTodoDrag(
-                                              todo: todo,
-                                              dayIndex: layout.dayIndex,
-                                              startMinute: layout.startMinute,
-                                              durationMinutes:
-                                                  layout.endMinute -
+                                  child: RecorderTooltip(
+                                    message: _todoCalendarTooltip(todo),
+                                    preferBelow: false,
+                                    child: MouseRegion(
+                                      cursor: isDraggingTodo
+                                          ? SystemMouseCursors.grabbing
+                                          : SystemMouseCursors.grab,
+                                      child: GestureDetector(
+                                        onTap: _todoBusy
+                                            ? null
+                                            : () => _openTodoEditor(todo: todo),
+                                        onPanStart: _todoBusy
+                                            ? null
+                                            : (details) => _beginTodoDrag(
+                                                  todo: todo,
+                                                  dayIndex: layout.dayIndex,
+                                                  startMinute:
                                                       layout.startMinute,
-                                              globalPosition:
-                                                  details.globalPosition,
+                                                  durationMinutes:
+                                                      layout.endMinute -
+                                                          layout.startMinute,
+                                                  globalPosition:
+                                                      details.globalPosition,
+                                                ),
+                                        onPanUpdate: _todoBusy
+                                            ? null
+                                            : (details) => _updateTodoDrag(
+                                                  globalPosition:
+                                                      details.globalPosition,
+                                                  dayWidth: dayWidth,
+                                                  hourHeight: hourHeight,
+                                                ),
+                                        onPanEnd: _todoBusy
+                                            ? null
+                                            : (_) => _finishTodoDrag(
+                                                  weekStart: start,
+                                                  todo: todo,
+                                                ),
+                                        onPanCancel: _clearTodoDrag,
+                                        child: AnimatedOpacity(
+                                          duration:
+                                              const Duration(milliseconds: 120),
+                                          opacity: isDraggingTodo ? 0.92 : 1,
+                                          child: AnimatedContainer(
+                                            duration: const Duration(
+                                                milliseconds: 120),
+                                            decoration: BoxDecoration(
+                                              color: fill,
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: accent.withValues(
+                                                    alpha: isDraggingTodo
+                                                        ? 0.38
+                                                        : 0.22),
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: scheme.shadow
+                                                      .withValues(
+                                                          alpha: isDraggingTodo
+                                                              ? 0.10
+                                                              : 0.04),
+                                                  blurRadius:
+                                                      isDraggingTodo ? 12 : 8,
+                                                  offset: Offset(0,
+                                                      isDraggingTodo ? 6 : 3),
+                                                ),
+                                              ],
                                             ),
-                                    onPanUpdate: _todoBusy
-                                        ? null
-                                        : (details) => _updateTodoDrag(
-                                              globalPosition:
-                                                  details.globalPosition,
-                                              dayWidth: dayWidth,
-                                              hourHeight: hourHeight,
+                                            child: Stack(
+                                              children: [
+                                                Positioned(
+                                                  left: 0,
+                                                  top: 0,
+                                                  bottom: 0,
+                                                  child: Container(
+                                                    width: 4,
+                                                    decoration: BoxDecoration(
+                                                      color: accent,
+                                                      borderRadius:
+                                                          const BorderRadius
+                                                              .horizontal(
+                                                        left:
+                                                            Radius.circular(10),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.fromLTRB(
+                                                          10, 6, 6, 6),
+                                                  child: compact
+                                                      ? Text(
+                                                          "$startLabel · ${todo.content}",
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style:
+                                                              Theme.of(context)
+                                                                  .textTheme
+                                                                  .labelSmall
+                                                                  ?.copyWith(
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w600,
+                                                                    decoration: todo.done
+                                                                        ? TextDecoration
+                                                                            .lineThrough
+                                                                        : TextDecoration
+                                                                            .none,
+                                                                  ),
+                                                        )
+                                                      : Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
+                                                            Row(
+                                                              children: [
+                                                                Icon(
+                                                                  Icons
+                                                                      .schedule_outlined,
+                                                                  size: 11,
+                                                                  color: accent,
+                                                                ),
+                                                                const SizedBox(
+                                                                    width: 4),
+                                                                Expanded(
+                                                                  child: Text(
+                                                                    "$startLabel-$endLabel",
+                                                                    maxLines: 1,
+                                                                    overflow:
+                                                                        TextOverflow
+                                                                            .ellipsis,
+                                                                    style: Theme.of(
+                                                                            context)
+                                                                        .textTheme
+                                                                        .labelSmall
+                                                                        ?.copyWith(
+                                                                          color:
+                                                                              accent,
+                                                                          fontWeight:
+                                                                              FontWeight.w700,
+                                                                        ),
+                                                                  ),
+                                                                ),
+                                                                if (reminderLabel !=
+                                                                    null)
+                                                                  Icon(
+                                                                    Icons
+                                                                        .alarm_outlined,
+                                                                    size: 11,
+                                                                    color: scheme
+                                                                        .onSurfaceVariant,
+                                                                  ),
+                                                              ],
+                                                            ),
+                                                            const SizedBox(
+                                                                height: 4),
+                                                            Expanded(
+                                                              child: Text(
+                                                                todo.content,
+                                                                maxLines:
+                                                                    blockHeight <
+                                                                            78
+                                                                        ? 2
+                                                                        : 4,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                                style: Theme.of(
+                                                                        context)
+                                                                    .textTheme
+                                                                    .labelSmall
+                                                                    ?.copyWith(
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w600,
+                                                                      decoration: todo.done
+                                                                          ? TextDecoration
+                                                                              .lineThrough
+                                                                          : TextDecoration
+                                                                              .none,
+                                                                    ),
+                                                              ),
+                                                            ),
+                                                            if (reminderLabel !=
+                                                                null)
+                                                              Text(
+                                                                "Reminder ${_hhmmFromDateTime(reminderLabel)}",
+                                                                maxLines: 1,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                                style: Theme.of(
+                                                                        context)
+                                                                    .textTheme
+                                                                    .labelSmall
+                                                                    ?.copyWith(
+                                                                      color: scheme
+                                                                          .onSurfaceVariant,
+                                                                    ),
+                                                              ),
+                                                          ],
+                                                        ),
+                                                ),
+                                              ],
                                             ),
-                                    onPanEnd: _todoBusy
-                                        ? null
-                                        : (_) => _finishTodoDrag(
-                                              weekStart: start,
-                                              todo: todo,
-                                            ),
-                                    onPanCancel: _clearTodoDrag,
-                                    child: AnimatedOpacity(
-                                      duration:
-                                          const Duration(milliseconds: 120),
-                                      opacity: isDraggingTodo ? 0.9 : 1,
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          color: todo.done
-                                              ? Theme.of(context)
-                                                  .colorScheme
-                                                  .surfaceContainerHighest
-                                              : Theme.of(context)
-                                                  .colorScheme
-                                                  .primaryContainer,
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                          border: Border.all(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .outline
-                                                .withValues(alpha: 0.18),
                                           ),
                                         ),
-                                        padding: const EdgeInsets.all(6),
-                                        child: compact
-                                            ? Text(
-                                                todo.content,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .labelSmall
-                                                    ?.copyWith(
-                                                      decoration: todo.done
-                                                          ? TextDecoration
-                                                              .lineThrough
-                                                          : TextDecoration.none,
-                                                    ),
-                                              )
-                                            : Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    "$startLabel-$endLabel",
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .labelSmall
-                                                        ?.copyWith(
-                                                          color: Theme.of(
-                                                                  context)
-                                                              .colorScheme
-                                                              .onSurfaceVariant,
-                                                        ),
-                                                  ),
-                                                  const SizedBox(height: 2),
-                                                  Expanded(
-                                                    child: Text(
-                                                      todo.content,
-                                                      maxLines: 2,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: Theme.of(context)
-                                                          .textTheme
-                                                          .labelSmall
-                                                          ?.copyWith(
-                                                            decoration: todo
-                                                                    .done
-                                                                ? TextDecoration
-                                                                    .lineThrough
-                                                                : TextDecoration
-                                                                    .none,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                  if (reminderLabel != null)
-                                                    Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons.alarm_outlined,
-                                                          size: 11,
-                                                          color: Theme.of(
-                                                                  context)
-                                                              .colorScheme
-                                                              .onSurfaceVariant,
-                                                        ),
-                                                        const SizedBox(
-                                                            width: 3),
-                                                        Expanded(
-                                                          child: Text(
-                                                            _hhmmFromDateTime(
-                                                                reminderLabel),
-                                                            maxLines: 1,
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                            style: Theme.of(
-                                                                    context)
-                                                                .textTheme
-                                                                .labelSmall
-                                                                ?.copyWith(
-                                                                  color: Theme.of(
-                                                                          context)
-                                                                      .colorScheme
-                                                                      .onSurfaceVariant,
-                                                                ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                ],
-                                              ),
                                       ),
                                     ),
                                   ),
@@ -2173,20 +2860,69 @@ class ReportsScreenState extends State<ReportsScreen> {
                                     width: 7,
                                     height: 7,
                                     decoration: BoxDecoration(
-                                      color:
-                                          Theme.of(context).colorScheme.error,
+                                      color: scheme.error,
                                       shape: BoxShape.circle,
                                     ),
                                   ),
                                   const SizedBox(width: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: scheme.errorContainer,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      _hhmmFromMinutes(nowMinute.floor()),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: scheme.error,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
                                   Expanded(
                                     child: Container(
                                       height: 1.4,
-                                      color:
-                                          Theme.of(context).colorScheme.error,
+                                      color: scheme.error,
                                     ),
                                   ),
                                 ],
+                              ),
+                            ),
+                          if (_dragTodoId != null &&
+                              dragDayIndex != null &&
+                              dragMinute != null)
+                            Positioned(
+                              right: 10,
+                              top: 10,
+                              child: IgnorePointer(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: scheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: scheme.outline
+                                          .withValues(alpha: 0.16),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    "${_todoDayTitle(days[dragDayIndex])} · ${_hhmmFromMinutes(dragMinute)}",
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelMedium
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
                               ),
                             ),
                         ],
@@ -2200,22 +2936,73 @@ class ReportsScreenState extends State<ReportsScreen> {
         ),
         if (unscheduled.isNotEmpty) ...[
           const SizedBox(height: RecorderTokens.space2),
-          Text("Unscheduled", style: Theme.of(context).textTheme.labelMedium),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: RecorderTokens.space2,
-            runSpacing: RecorderTokens.space2,
-            children: [
-              for (final t in unscheduled)
-                ActionChip(
-                  label: Text(
-                    t.content,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  onPressed: _todoBusy ? null : () => _openTodoEditor(todo: t),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(RecorderTokens.space3),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Backlog in this week",
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                 ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  "These TODO stay off the time grid until you give them a slot.",
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: RecorderTokens.space2),
+                Wrap(
+                  spacing: RecorderTokens.space2,
+                  runSpacing: RecorderTokens.space2,
+                  children: [
+                    for (final t in unscheduled)
+                      RecorderTooltip(
+                        message: _todoCalendarTooltip(t),
+                        preferBelow: false,
+                        child: ActionChip(
+                          avatar: Icon(
+                            Icons.calendar_today_outlined,
+                            size: 14,
+                            color: _isSameDay(_todoDay(t), selectedDay)
+                                ? scheme.secondary
+                                : scheme.onSurfaceVariant,
+                          ),
+                          label: Text(
+                            "${_weekdayLabel(_todoDay(t).weekday)} · ${t.content}",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          side: BorderSide(
+                            color: _isSameDay(_todoDay(t), selectedDay)
+                                ? scheme.secondary.withValues(alpha: 0.22)
+                                : scheme.outline.withValues(alpha: 0.14),
+                          ),
+                          backgroundColor: _isSameDay(_todoDay(t), selectedDay)
+                              ? scheme.secondaryContainer
+                                  .withValues(alpha: 0.74)
+                              : scheme.surface,
+                          onPressed: _todoBusy
+                              ? null
+                              : () async {
+                                  setState(() => _todoAnchorDay = _todoDay(t));
+                                  await _openTodoEditor(todo: t);
+                                },
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ],
@@ -2230,6 +3017,7 @@ class ReportsScreenState extends State<ReportsScreen> {
     const weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     final today = _normalizeDay(DateTime.now());
     final byDay = <DateTime, List<ReportTodo>>{};
+    final scheme = Theme.of(context).colorScheme;
     for (final t in _todosForMonth(anchor)) {
       final d = _todoDay(t);
       byDay.putIfAbsent(d, () => []).add(t);
@@ -2253,97 +3041,297 @@ class ReportsScreenState extends State<ReportsScreen> {
               ),
           ],
         ),
-        GridView.builder(
-          physics: const NeverScrollableScrollPhysics(),
-          shrinkWrap: true,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 7,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 1.12,
-          ),
-          itemCount: cells.length,
-          itemBuilder: (context, index) {
-            final day = _normalizeDay(cells[index]);
-            final inMonth = day.month == anchor.month;
-            final list = _sortTodos(byDay[day] ?? const []);
-            final openCount = list.where((t) => !t.done).length;
-            final doneCount = list.length - openCount;
-            final isToday = _isSameDay(day, today);
-            return InkWell(
-              onTap: () => setState(() {
-                _dragTodoId = null;
-                _dragOriginDayIndex = null;
-                _dragOriginStartMinute = null;
-                _dragCurrentDayIndex = null;
-                _dragCurrentStartMinute = null;
-                _dragDurationMinutes = null;
-                _dragStartGlobalPosition = null;
-                _todoAnchorDay = day;
-                _todoCalendarView = _TodoCalendarView.week;
-              }),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: isToday
-                      ? Theme.of(context)
-                          .colorScheme
-                          .primaryContainer
-                          .withValues(alpha: 0.35)
-                      : null,
-                  borderRadius: BorderRadius.circular(RecorderTokens.radiusM),
-                  border: Border.all(
-                    color: isToday
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context)
-                            .colorScheme
-                            .outline
-                            .withValues(alpha: 0.14),
-                  ),
-                ),
-                padding: const EdgeInsets.all(RecorderTokens.space2),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      day.day.toString(),
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: inMonth
-                                ? null
-                                : Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            final aspectRatio = width < 700
+                ? 0.82
+                : width < 980
+                    ? 0.96
+                    : 1.12;
+            return GridView.builder(
+              physics: const NeverScrollableScrollPhysics(),
+              shrinkWrap: true,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: aspectRatio,
+              ),
+              itemCount: cells.length,
+              itemBuilder: (context, index) {
+                final day = _normalizeDay(cells[index]);
+                final inMonth = day.month == anchor.month;
+                final list = _sortTodos(byDay[day] ?? const []);
+                final openCount = list.where((t) => !t.done).length;
+                final doneCount = list.length - openCount;
+                final scheduledCount =
+                    list.where((t) => !t.done && _todoHasSchedule(t)).length;
+                final isToday = _isSameDay(day, today);
+                final isSelected = _isSameDay(day, _todoAnchorDay);
+                final cellBg = isSelected
+                    ? scheme.secondaryContainer.withValues(alpha: 0.55)
+                    : isToday
+                        ? scheme.primaryContainer.withValues(alpha: 0.38)
+                        : scheme.surfaceContainerLowest;
+                final cellBorder = isSelected
+                    ? scheme.secondary.withValues(alpha: 0.22)
+                    : isToday
+                        ? scheme.primary.withValues(alpha: 0.22)
+                        : scheme.outline.withValues(alpha: 0.14);
+
+                return RecorderTooltip(
+                  message:
+                      "${_todoDayTitle(day)}\n${list.length} item${list.length == 1 ? "" : "s"}",
+                  preferBelow: false,
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius:
+                            BorderRadius.circular(RecorderTokens.radiusM),
+                        onTap: () => setState(() {
+                          _dragTodoId = null;
+                          _dragOriginDayIndex = null;
+                          _dragOriginStartMinute = null;
+                          _dragCurrentDayIndex = null;
+                          _dragCurrentStartMinute = null;
+                          _dragDurationMinutes = null;
+                          _dragStartGlobalPosition = null;
+                          _todoAnchorDay = day;
+                          _todoCalendarView = _TodoCalendarView.week;
+                        }),
+                        onLongPress: _todoBusy || !inMonth
+                            ? null
+                            : () => _openTodoEditor(suggestedDay: day),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: cellBg,
+                            borderRadius:
+                                BorderRadius.circular(RecorderTokens.radiusM),
+                            border: Border.all(color: cellBorder),
                           ),
-                    ),
-                    const SizedBox(height: 4),
-                    for (final t in list.take(2))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 2),
-                        child: Text(
-                          "• ${t.content}",
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelSmall,
+                          padding: const EdgeInsets.all(RecorderTokens.space2),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    day.day.toString(),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge
+                                        ?.copyWith(
+                                          color: inMonth
+                                              ? null
+                                              : scheme.onSurfaceVariant,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                  const Spacer(),
+                                  if (openCount > 0)
+                                    _plannerInfoPill(
+                                      context,
+                                      icon: Icons.inbox_outlined,
+                                      label: "$openCount",
+                                      compact: true,
+                                      bgColor: scheme.surface
+                                          .withValues(alpha: 0.86),
+                                      fgColor: isSelected
+                                          ? scheme.secondary
+                                          : scheme.onSurfaceVariant,
+                                      borderColor: Colors.transparent,
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Expanded(
+                                child: list.isEmpty
+                                    ? Align(
+                                        alignment: Alignment.topLeft,
+                                        child: Text(
+                                          isSelected && inMonth
+                                              ? "Click to open week view"
+                                              : "",
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelSmall
+                                              ?.copyWith(
+                                                color: scheme.onSurfaceVariant,
+                                              ),
+                                        ),
+                                      )
+                                    : Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          for (final todo in list.take(3))
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                  bottom: 4),
+                                              child: RecorderTooltip(
+                                                message:
+                                                    _todoCalendarTooltip(todo),
+                                                preferBelow: false,
+                                                child: Container(
+                                                  width: double.infinity,
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 4,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: todo.done
+                                                        ? scheme
+                                                            .surfaceContainerHighest
+                                                        : _todoIsOverdue(todo)
+                                                            ? scheme
+                                                                .errorContainer
+                                                                .withValues(
+                                                                    alpha: 0.86)
+                                                            : _todoHasSchedule(
+                                                                    todo)
+                                                                ? scheme
+                                                                    .primaryContainer
+                                                                    .withValues(
+                                                                        alpha:
+                                                                            0.86)
+                                                                : scheme
+                                                                    .tertiaryContainer
+                                                                    .withValues(
+                                                                        alpha:
+                                                                            0.82),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8),
+                                                  ),
+                                                  child: Row(
+                                                    children: [
+                                                      Container(
+                                                        width: 3,
+                                                        height: 18,
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: _todoIsOverdue(
+                                                                  todo)
+                                                              ? scheme.error
+                                                              : todo.done
+                                                                  ? scheme
+                                                                      .outline
+                                                                  : _todoHasSchedule(
+                                                                          todo)
+                                                                      ? scheme
+                                                                          .primary
+                                                                      : scheme
+                                                                          .tertiary,
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(
+                                                                      999),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      if (_todoHasSchedule(
+                                                          todo))
+                                                        Padding(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .only(
+                                                                  right: 6),
+                                                          child: Text(
+                                                            _hhmmFromMinutes(
+                                                                _todoStartMinute(
+                                                                    todo)),
+                                                            style: Theme.of(
+                                                                    context)
+                                                                .textTheme
+                                                                .labelSmall
+                                                                ?.copyWith(
+                                                                  color: scheme
+                                                                      .onSurfaceVariant,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w700,
+                                                                ),
+                                                          ),
+                                                        ),
+                                                      Expanded(
+                                                        child: Text(
+                                                          todo.content,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style:
+                                                              Theme.of(context)
+                                                                  .textTheme
+                                                                  .labelSmall
+                                                                  ?.copyWith(
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w600,
+                                                                    decoration: todo.done
+                                                                        ? TextDecoration
+                                                                            .lineThrough
+                                                                        : TextDecoration
+                                                                            .none,
+                                                                  ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          if (list.length > 3)
+                                            Text(
+                                              "+${list.length - 3} more",
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelSmall
+                                                  ?.copyWith(
+                                                    color:
+                                                        scheme.onSurfaceVariant,
+                                                  ),
+                                            ),
+                                        ],
+                                      ),
+                              ),
+                              if (list.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    if (scheduledCount > 0)
+                                      _plannerInfoPill(
+                                        context,
+                                        icon: Icons.schedule_outlined,
+                                        label: "$scheduledCount timed",
+                                        compact: true,
+                                      ),
+                                    if (doneCount > 0)
+                                      _plannerInfoPill(
+                                        context,
+                                        icon: Icons.check_circle_outline,
+                                        label: "$doneCount done",
+                                        compact: true,
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                       ),
-                    if (list.length > 2)
-                      Text(
-                        "+${list.length - 2}",
-                        style: Theme.of(context).textTheme.labelSmall,
-                      ),
-                    if (list.isNotEmpty) ...[
-                      const Spacer(),
-                      Text(
-                        "$openCount open · $doneCount done",
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+                    ),
+                  ),
+                );
+              },
             );
           },
         ),
@@ -2697,117 +3685,142 @@ class ReportsScreenState extends State<ReportsScreen> {
   Widget _todoCalendarDimension(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final hourHeight = _weekCalendarHourHeight(context);
-    final weekViewportHeight = 38 + 24 * hourHeight + 16;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 820;
-            final calendarModeSwitch = SegmentedButton<_TodoCalendarView>(
-              segments: const [
-                ButtonSegment(
-                    value: _TodoCalendarView.week, label: Text("Week")),
-                ButtonSegment(
-                    value: _TodoCalendarView.month, label: Text("Month")),
-              ],
-              selected: {_todoCalendarView},
-              showSelectedIcon: false,
-              onSelectionChanged: (s) => setState(() {
-                _dragTodoId = null;
-                _dragOriginDayIndex = null;
-                _dragOriginStartMinute = null;
-                _dragCurrentDayIndex = null;
-                _dragCurrentStartMinute = null;
-                _dragDurationMinutes = null;
-                _dragStartGlobalPosition = null;
-                _todoCalendarView = s.first;
-              }),
-            );
-            final rangeNavigator = Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: "Previous",
-                  onPressed: _todoBusy ? null : () => _shiftTodoRange(-1),
-                  icon: const Icon(Icons.chevron_left),
-                ),
-                Text(
-                  _todoRangeLabel(),
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
-                IconButton(
-                  tooltip: "Next",
-                  onPressed: _todoBusy ? null : () => _shiftTodoRange(1),
-                  icon: const Icon(Icons.chevron_right),
-                ),
-                TextButton(
-                  onPressed: _todoBusy
-                      ? null
-                      : () => setState(() {
-                            _dragTodoId = null;
-                            _dragOriginDayIndex = null;
-                            _dragOriginStartMinute = null;
-                            _dragCurrentDayIndex = null;
-                            _dragCurrentStartMinute = null;
-                            _dragDurationMinutes = null;
-                            _dragStartGlobalPosition = null;
-                            _todoAnchorDay = _normalizeDay(DateTime.now());
-                          }),
-                  child: const Text("Today"),
-                ),
-              ],
-            );
+        _calendarOverviewCard(context),
+        const SizedBox(height: RecorderTokens.space2),
+        Container(
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
+          ),
+          padding: const EdgeInsets.all(RecorderTokens.space3),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 920;
+              final calendarModeSwitch = SegmentedButton<_TodoCalendarView>(
+                segments: const [
+                  ButtonSegment(
+                      value: _TodoCalendarView.week, label: Text("Week")),
+                  ButtonSegment(
+                      value: _TodoCalendarView.month, label: Text("Month")),
+                ],
+                selected: {_todoCalendarView},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) => setState(() {
+                  _dragTodoId = null;
+                  _dragOriginDayIndex = null;
+                  _dragOriginStartMinute = null;
+                  _dragCurrentDayIndex = null;
+                  _dragCurrentStartMinute = null;
+                  _dragDurationMinutes = null;
+                  _dragStartGlobalPosition = null;
+                  _todoCalendarView = s.first;
+                }),
+              );
+              final rangeNavigator = Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: "Previous",
+                    onPressed: _todoBusy ? null : () => _shiftTodoRange(-1),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Text(
+                    _todoRangeLabel(),
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  IconButton(
+                    tooltip: "Next",
+                    onPressed: _todoBusy ? null : () => _shiftTodoRange(1),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                  TextButton(
+                    onPressed: _todoBusy
+                        ? null
+                        : () => setState(() {
+                              _dragTodoId = null;
+                              _dragOriginDayIndex = null;
+                              _dragOriginStartMinute = null;
+                              _dragCurrentDayIndex = null;
+                              _dragCurrentStartMinute = null;
+                              _dragDurationMinutes = null;
+                              _dragStartGlobalPosition = null;
+                              _todoAnchorDay = _normalizeDay(DateTime.now());
+                            }),
+                    child: const Text("Today"),
+                  ),
+                ],
+              );
+              final addButton = OutlinedButton.icon(
+                onPressed: _todoBusy
+                    ? null
+                    : () => _openTodoEditor(
+                          suggestedDay: _todoAnchorDay,
+                          forceSchedule:
+                              _todoCalendarView == _TodoCalendarView.week,
+                        ),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text("Add on selected day"),
+              );
+              final hintText = Text(
+                _todoCalendarView == _TodoCalendarView.week
+                    ? "Click empty slots to create. Drag blocks to reschedule. Long press a month cell to add directly."
+                    : "Click a day to jump into week view. Long press a day to add a TODO directly.",
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              );
 
-            if (compact) {
+              if (compact) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    calendarModeSwitch,
+                    const SizedBox(height: RecorderTokens.space2),
+                    rangeNavigator,
+                    const SizedBox(height: RecorderTokens.space2),
+                    addButton,
+                    const SizedBox(height: RecorderTokens.space2),
+                    hintText,
+                  ],
+                );
+              }
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  calendarModeSwitch,
-                  const SizedBox(height: RecorderTokens.space1),
-                  rangeNavigator,
+                  Row(
+                    children: [
+                      calendarModeSwitch,
+                      const SizedBox(width: RecorderTokens.space2),
+                      Expanded(child: rangeNavigator),
+                      addButton,
+                    ],
+                  ),
+                  const SizedBox(height: RecorderTokens.space2),
+                  hintText,
                 ],
               );
-            }
-            return Row(
-              children: [
-                calendarModeSwitch,
-                const SizedBox(width: RecorderTokens.space2),
-                Expanded(child: rangeNavigator),
-                Text(
-                  _todoRangeLoadText(),
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelSmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
-                ),
-              ],
-            );
-          },
-        ),
-        if (_todoCalendarView == _TodoCalendarView.week) ...[
-          const SizedBox(height: RecorderTokens.space1),
-          Text(
-            "点击空白时间格可创建，拖拽时间块可改期。",
-            style: Theme.of(context)
-                .textTheme
-                .labelSmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
+            },
           ),
-        ],
+        ),
         const SizedBox(height: RecorderTokens.space2),
         if (_todoCalendarView == _TodoCalendarView.week)
-          SizedBox(
-            height: weekViewportHeight,
-            child: _todoWeekView(
-              context,
-              _todoAnchorDay,
-              hourHeight: hourHeight,
-            ),
+          _todoWeekView(
+            context,
+            _todoAnchorDay,
+            hourHeight: hourHeight,
           )
         else
           _todoMonthView(context, _todoAnchorDay),
+        const SizedBox(height: RecorderTokens.space2),
+        _calendarFocusDayCard(context),
       ],
     );
   }
@@ -2940,7 +3953,7 @@ class ReportsScreenState extends State<ReportsScreen> {
         ] else ...[
           const SizedBox(height: RecorderTokens.space1),
           Text(
-            "Week / Month 视图，支持拖拽调整时间。",
+            "Week / Month 视图，支持点击空白创建、拖拽改期，并按选中日查看 agenda。",
             style: Theme.of(context)
                 .textTheme
                 .labelSmall

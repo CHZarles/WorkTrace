@@ -1477,7 +1477,7 @@ class SettingsScreenState extends State<SettingsScreen> {
                                         width: RecorderTokens.space1),
                                     Expanded(
                                       child: Text(
-                                        "Installer path: %LOCALAPPDATA%\\Programs\\WorkTrace\nDatabase: %LOCALAPPDATA%\\WorkTrace\\recorder-core.db\nLegacy installs may still migrate from: %LOCALAPPDATA%\\RecorderPhone\\recorder-core.db",
+                                        "Installer path: %LOCALAPPDATA%\\Programs\\WorkTrace\nDatabase: %LOCALAPPDATA%\\WorkTrace\\recorder-core.db",
                                         style: Theme.of(context)
                                             .textTheme
                                             .labelMedium,

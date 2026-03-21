@@ -6,7 +6,8 @@ import "../theme/tokens.dart";
 import "../utils/format.dart";
 
 class QuickReviewSheet extends StatefulWidget {
-  const QuickReviewSheet({super.key, required this.client, required this.block});
+  const QuickReviewSheet(
+      {super.key, required this.client, required this.block});
 
   final CoreClient client;
   final BlockSummary block;
@@ -23,7 +24,14 @@ class _QuickReviewSheetState extends State<QuickReviewSheet> {
   bool _skipSaving = false;
   final Set<String> _tags = {};
 
-  static const _presetTags = ["Work", "Meeting", "Learning", "Admin", "Life", "Entertainment"];
+  static const _presetTags = [
+    "Work",
+    "Meeting",
+    "Learning",
+    "Admin",
+    "Life",
+    "Entertainment",
+  ];
 
   @override
   void initState() {
@@ -49,7 +57,8 @@ class _QuickReviewSheetState extends State<QuickReviewSheet> {
 
     if (doing.isEmpty && output.isEmpty && next.isEmpty && _tags.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Write a quick note, or choose Skip.")),
+        const SnackBar(
+            content: Text("Write a quick note, add a tag, or choose Skip.")),
       );
       return;
     }
@@ -71,7 +80,9 @@ class _QuickReviewSheetState extends State<QuickReviewSheet> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Save failed: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Save failed: $e")),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -96,16 +107,98 @@ class _QuickReviewSheetState extends State<QuickReviewSheet> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Action failed: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Action failed: $e")),
+      );
     } finally {
       if (mounted) setState(() => _skipSaving = false);
     }
   }
 
+  Widget _summaryPill(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    Color? bgColor,
+    Color? fgColor,
+    Color? borderColor,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final resolvedBg = bgColor ?? scheme.surface;
+    final resolvedFg = fgColor ?? scheme.onSurfaceVariant;
+    final resolvedBorder =
+        borderColor ?? scheme.outline.withValues(alpha: 0.14);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: RecorderTokens.space2,
+        vertical: RecorderTokens.space1,
+      ),
+      decoration: BoxDecoration(
+        color: resolvedBg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: resolvedBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: resolvedFg),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: resolvedFg,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionCard(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
+      ),
+      padding: const EdgeInsets.all(RecorderTokens.space3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: RecorderTokens.space3),
+          child,
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final bottom = MediaQuery.of(context).viewInsets.bottom;
-    final title = "${formatHHMM(widget.block.startTs)}–${formatHHMM(widget.block.endTs)}";
+    final title =
+        "${formatHHMM(widget.block.startTs)}–${formatHHMM(widget.block.endTs)}";
     final top = widget.block.topItems
         .take(3)
         .map((it) => "${displayTopItemName(it)} ${formatDuration(it.seconds)}")
@@ -137,74 +230,168 @@ class _QuickReviewSheetState extends State<QuickReviewSheet> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              Text("Quick review", style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: RecorderTokens.space1),
-              Text(title, style: Theme.of(context).textTheme.labelMedium),
-              const SizedBox(height: RecorderTokens.space2),
-              Text("Top: $top", style: Theme.of(context).textTheme.bodyMedium),
-              const SizedBox(height: RecorderTokens.space4),
-              TextField(
-                controller: _doing,
-                decoration: const InputDecoration(labelText: "Doing (optional)"),
-                textInputAction: TextInputAction.next,
-              ),
-              const SizedBox(height: RecorderTokens.space3),
-              TextField(
-                controller: _output,
-                decoration: const InputDecoration(labelText: "Output / Result"),
-                minLines: 2,
-                maxLines: 5,
-              ),
-              const SizedBox(height: RecorderTokens.space3),
-              TextField(
-                controller: _next,
-                decoration: const InputDecoration(labelText: "Next (optional)"),
-                minLines: 1,
-                maxLines: 3,
-              ),
-              const SizedBox(height: RecorderTokens.space4),
-              Row(
-                children: [
-                  Expanded(child: Text("Tags", style: Theme.of(context).textTheme.titleMedium)),
-                  Text(skipped ? "Skipped" : "", style: Theme.of(context).textTheme.labelMedium),
-                ],
-              ),
-              const SizedBox(height: RecorderTokens.space2),
-              Wrap(
-                spacing: RecorderTokens.space2,
-                runSpacing: RecorderTokens.space2,
-                children: [
-                  for (final t in allTags)
-                    FilterChip(
-                      label: Text(t),
-                      selected: _tags.contains(t),
-                      onSelected: (v) => setState(() {
-                        if (v) {
-                          _tags.add(t);
-                        } else {
-                          _tags.remove(t);
-                        }
-                      }),
+              Text(
+                "Quick review",
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
-                ],
+              ),
+              const SizedBox(height: RecorderTokens.space1),
+              Text(
+                "Any note or tag marks this block as reviewed. Skip marks it handled without notes.",
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: RecorderTokens.space3),
+              _sectionCard(
+                context,
+                title: "Block summary",
+                subtitle: "Fast context before you write.",
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: RecorderTokens.space2,
+                      runSpacing: RecorderTokens.space2,
+                      children: [
+                        _summaryPill(
+                          context,
+                          icon: Icons.schedule_outlined,
+                          label:
+                              "${formatDuration(widget.block.totalSeconds)} · $title",
+                        ),
+                        _summaryPill(
+                          context,
+                          icon: skipped
+                              ? Icons.skip_next_outlined
+                              : Icons.pending_actions_outlined,
+                          label: skipped ? "Skipped" : "Open",
+                          bgColor: skipped
+                              ? scheme.surfaceContainerHigh
+                              : scheme.primary.withValues(alpha: 0.10),
+                          fgColor: skipped
+                              ? scheme.onSurfaceVariant
+                              : scheme.primary,
+                          borderColor: skipped
+                              ? scheme.outline.withValues(alpha: 0.14)
+                              : scheme.primary.withValues(alpha: 0.16),
+                        ),
+                        _summaryPill(
+                          context,
+                          icon: Icons.keyboard_command_key,
+                          label: "Ctrl+Enter to save",
+                        ),
+                      ],
+                    ),
+                    if (top.isNotEmpty) ...[
+                      const SizedBox(height: RecorderTokens.space3),
+                      Text(
+                        top,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: RecorderTokens.space3),
+              _sectionCard(
+                context,
+                title: "Review note",
+                subtitle:
+                    "Capture what happened, what came out, and what should happen next.",
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: _doing,
+                      decoration: const InputDecoration(
+                        labelText: "Doing",
+                        hintText: "What were you mainly doing?",
+                      ),
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: RecorderTokens.space3),
+                    TextField(
+                      controller: _output,
+                      decoration: const InputDecoration(
+                        labelText: "Output / Result",
+                        hintText: "What actually got produced or decided?",
+                      ),
+                      minLines: 2,
+                      maxLines: 5,
+                    ),
+                    const SizedBox(height: RecorderTokens.space3),
+                    TextField(
+                      controller: _next,
+                      decoration: const InputDecoration(
+                        labelText: "Next",
+                        hintText: "What should happen after this block?",
+                      ),
+                      minLines: 1,
+                      maxLines: 3,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: RecorderTokens.space3),
+              _sectionCard(
+                context,
+                title: "Tags",
+                subtitle:
+                    "Tags alone are enough to mark this block as reviewed.",
+                child: Wrap(
+                  spacing: RecorderTokens.space2,
+                  runSpacing: RecorderTokens.space2,
+                  children: [
+                    for (final t in allTags)
+                      FilterChip(
+                        label: Text(t),
+                        selected: _tags.contains(t),
+                        onSelected: (v) => setState(() {
+                          if (v) {
+                            _tags.add(t);
+                          } else {
+                            _tags.remove(t);
+                          }
+                        }),
+                      ),
+                  ],
+                ),
               ),
               const SizedBox(height: RecorderTokens.space4),
               Row(
                 children: [
                   Expanded(
-                    child: FilledButton(
+                    child: FilledButton.icon(
                       onPressed: _saving || _skipSaving ? null : _save,
-                      child: _saving
-                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text("Save"),
+                      icon: _saving
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save_outlined, size: 18),
+                      label: const Text("Save review"),
                     ),
                   ),
                   const SizedBox(width: RecorderTokens.space3),
-                  OutlinedButton(
-                    onPressed: _saving || _skipSaving ? null : () => _toggleSkip(skipped: !skipped),
-                    child: _skipSaving
-                        ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                        : Text(skipped ? "Unskip" : "Skip"),
+                  OutlinedButton.icon(
+                    onPressed: _saving || _skipSaving
+                        ? null
+                        : () => _toggleSkip(skipped: !skipped),
+                    icon: _skipSaving
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            skipped
+                                ? Icons.undo_outlined
+                                : Icons.skip_next_outlined,
+                            size: 18,
+                          ),
+                    label: Text(skipped ? "Unskip" : "Skip"),
                   ),
                 ],
               ),

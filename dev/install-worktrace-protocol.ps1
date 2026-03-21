@@ -14,9 +14,7 @@ $legacyKeyPath = "HKCU:\\Software\\Classes\\recorderphone"
 function Resolve-DefaultExePath {
   $candidates = @(
     (Join-Path $RepoRoot "dist\\windows\\WorkTrace\\WorkTrace.exe"),
-    (Join-Path $RepoRoot "dist\\windows\\RecorderPhone\\RecorderPhone.exe"),
     (Join-Path $RepoRoot "dist\\windows\\WorkTrace\\recorderphone_ui.exe"),
-    (Join-Path $RepoRoot "dist\\windows\\RecorderPhone\\recorderphone_ui.exe"),
     (Join-Path $RepoRoot "recorderphone_ui\\build\\windows\\x64\\runner\\Debug\\recorderphone_ui.exe"),
     (Join-Path $RepoRoot "recorderphone_ui\\build\\windows\\x64\\runner\\Release\\recorderphone_ui.exe")
   )
@@ -46,7 +44,6 @@ if ([string]::IsNullOrWhiteSpace($ExePath) -or -not (Test-Path $ExePath)) {
   Write-Host "[protocol] WorkTrace.exe / recorderphone_ui.exe not found."
   Write-Host "  Expected one of:"
   Write-Host "    $RepoRoot\\dist\\windows\\WorkTrace\\WorkTrace.exe"
-  Write-Host "    $RepoRoot\\dist\\windows\\RecorderPhone\\RecorderPhone.exe"
   Write-Host "    $RepoRoot\\recorderphone_ui\\build\\windows\\x64\\runner\\Debug\\recorderphone_ui.exe"
   Write-Host "    $RepoRoot\\recorderphone_ui\\build\\windows\\x64\\runner\\Release\\recorderphone_ui.exe"
   Write-Host ""

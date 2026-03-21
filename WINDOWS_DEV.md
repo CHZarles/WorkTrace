@@ -287,5 +287,3 @@ powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -Installer -I
 数据落盘位置：
 - DB：`%LOCALAPPDATA%\\WorkTrace\\recorder-core.db`
 - PID：`%LOCALAPPDATA%\\WorkTrace\\agent-pids.json`
-
-如果本机已有旧的 `%LOCALAPPDATA%\\RecorderPhone`，应用会继续兼容并在可行时迁移到 `WorkTrace` 目录。

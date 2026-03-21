@@ -64,17 +64,7 @@ class _IoTrayController with WindowListener implements TrayController {
   }
 
   String _defaultDataDirPath() {
-    final current = _userDataDirPath("WorkTrace");
-    if (Directory(current).existsSync()) return current;
-
-    final legacy = _userDataDirPath("RecorderPhone");
-    if (!Directory(legacy).existsSync()) return current;
-
-    try {
-      return Directory(legacy).renameSync(current).path;
-    } catch (_) {
-      return legacy;
-    }
+    return _userDataDirPath("WorkTrace");
   }
 
   Future<void> _openPathInExplorer(String path,

@@ -65,8 +65,6 @@ powershell -ExecutionPolicy Bypass -File .\dev\package-windows.ps1 -InstallProto
 - UI 会用 `Server URL` 的 host/port（默认 `http://127.0.0.1:17600`）启动 Core，并把数据库写到：
   - `%LOCALAPPDATA%\\WorkTrace\\recorder-core.db`（以及 `%LOCALAPPDATA%\\WorkTrace\\agent-pids.json`）
 
-如果本机已有旧的 `%LOCALAPPDATA%\\RecorderPhone`，应用会继续兼容并在可行时迁移到 `WorkTrace` 目录。
-
 开发期想快速模拟“打包模式”，可以在 Windows 先 build Rust release，然后把 exe 拷到 Flutter Windows runner 的目录里（例如 `build\\windows\\x64\\runner\\Release\\`）再运行 UI。
 
 ### 如果你在用 `dev/sync-to-windows.mjs`

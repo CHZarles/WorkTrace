@@ -72,8 +72,6 @@ git push origin v0.1.1
 - 数据默认落在：
   - `%LOCALAPPDATA%\\WorkTrace\\recorder-core.db`
   - `%LOCALAPPDATA%\\WorkTrace\\agent-pids.json`
-
-如果本机已有旧的 `%LOCALAPPDATA%\\RecorderPhone`，应用会继续兼容并在可行时迁移到 `WorkTrace` 目录。
 - 托盘右键支持 `Open app folder` / `Open data folder`，可直接定位路径。
 
 ---

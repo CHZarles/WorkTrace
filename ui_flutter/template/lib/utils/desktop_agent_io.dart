@@ -140,17 +140,7 @@ class _IoDesktopAgent implements DesktopAgent {
   }
 
   Directory _defaultDataRoot() {
-    final current = _userDataRoot("WorkTrace");
-    if (current.existsSync()) return current;
-
-    final legacy = _userDataRoot("RecorderPhone");
-    if (!legacy.existsSync()) return current;
-
-    try {
-      return Directory(legacy.renameSync(current.path).path);
-    } catch (_) {
-      return legacy;
-    }
+    return _userDataRoot("WorkTrace");
   }
 
   Directory _dataRootForMode({required _AgentBinaries bins, String? repoRoot}) {
