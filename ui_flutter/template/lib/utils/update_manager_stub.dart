@@ -26,6 +26,7 @@ class _StubUpdateManager implements UpdateManager {
     required UpdateRelease latest,
     required String installAssetUrl,
     bool startMinimized = false,
+    void Function(UpdateInstallProgress progress)? onProgress,
   }) async {
     return const UpdateInstallResult(ok: false, error: "not_supported");
   }

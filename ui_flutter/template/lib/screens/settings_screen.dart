@@ -103,6 +103,7 @@ class SettingsScreenState extends State<SettingsScreen> {
   BuildInfo? _buildInfo;
   UpdateRelease? _latestRelease;
   bool _updateAvailable = false;
+  UpdateInstallProgress? _updateInstallProgress;
   Timer? _updateRepoSaveDebounce;
 
   Future<void> refresh() async {
@@ -265,6 +266,33 @@ class SettingsScreenState extends State<SettingsScreen> {
     return "$y-$m-$d $hh:$mm";
   }
 
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return "${bytes} B";
+    final kib = bytes / 1024;
+    if (kib < 1024) return "${kib.toStringAsFixed(kib >= 100 ? 0 : 1)} KB";
+    final mib = kib / 1024;
+    if (mib < 1024) return "${mib.toStringAsFixed(mib >= 100 ? 0 : 1)} MB";
+    final gib = mib / 1024;
+    return "${gib.toStringAsFixed(gib >= 100 ? 0 : 1)} GB";
+  }
+
+  String _updateInstallStatusText(UpdateInstallProgress progress) {
+    switch (progress.phase) {
+      case UpdateInstallPhase.preparing:
+        return "Preparing update…";
+      case UpdateInstallPhase.downloading:
+        final downloaded = _formatBytes(progress.downloadedBytes);
+        final total = progress.totalBytes;
+        if (total != null && total > 0) {
+          final percent = ((progress.progress ?? 0) * 100).clamp(0, 100);
+          return "Downloading update… $downloaded / ${_formatBytes(total)} (${percent.toStringAsFixed(percent >= 10 ? 0 : 1)}%)";
+        }
+        return "Downloading update… $downloaded";
+      case UpdateInstallPhase.launchingInstaller:
+        return "Launching installer…";
+    }
+  }
+
   Future<void> _installUpdate() async {
     final mgr = UpdateManager.instance;
     if (!mgr.isAvailable) return;
@@ -297,6 +325,8 @@ class SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _updatesInstalling = true;
       _updatesError = null;
+      _updateInstallProgress =
+          const UpdateInstallProgress(phase: UpdateInstallPhase.preparing);
     });
     try {
       final agent = DesktopAgent.instance;
@@ -305,17 +335,34 @@ class SettingsScreenState extends State<SettingsScreen> {
         await Future<void>.delayed(const Duration(milliseconds: 250));
       }
 
-      final res = await mgr.installUpdate(latest: latest, installAssetUrl: url);
+      final res = await mgr.installUpdate(
+        latest: latest,
+        installAssetUrl: url,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() => _updateInstallProgress = progress);
+        },
+      );
       if (!mounted) return;
       if (!res.ok) {
-        setState(() => _updatesError = res.error ?? "install_failed");
+        setState(() {
+          _updatesError = res.error ?? "install_failed";
+          _updateInstallProgress = null;
+        });
         return;
       }
 
       // Updater will restart the app; exit this process immediately.
       mgr.exitApp();
     } finally {
-      if (mounted) setState(() => _updatesInstalling = false);
+      if (mounted) {
+        setState(() {
+          _updatesInstalling = false;
+          if (_updatesError != null) {
+            _updateInstallProgress = null;
+          }
+        });
+      }
     }
   }
 
@@ -1668,6 +1715,26 @@ class SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ],
                   ),
+                  if (_updatesInstalling && _updateInstallProgress != null) ...[
+                    const SizedBox(height: RecorderTokens.space2),
+                    Builder(
+                      builder: (context) {
+                        final progress = _updateInstallProgress!;
+                        final value = progress.progress;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _updateInstallStatusText(progress),
+                              style: Theme.of(context).textTheme.labelMedium,
+                            ),
+                            const SizedBox(height: RecorderTokens.space2),
+                            LinearProgressIndicator(value: value),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
                   if (_updateAvailable) ...[
                     const SizedBox(height: RecorderTokens.space2),
                     FilledButton.icon(

@@ -24,6 +24,7 @@ abstract class UpdateManager {
     required UpdateRelease latest,
     required String installAssetUrl,
     bool startMinimized = false,
+    void Function(UpdateInstallProgress progress)? onProgress,
   });
 }
 
@@ -92,4 +93,29 @@ class UpdateInstallResult {
 
   final bool ok;
   final String? error;
+}
+
+enum UpdateInstallPhase {
+  preparing,
+  downloading,
+  launchingInstaller,
+}
+
+class UpdateInstallProgress {
+  const UpdateInstallProgress({
+    required this.phase,
+    this.downloadedBytes = 0,
+    this.totalBytes,
+  });
+
+  final UpdateInstallPhase phase;
+  final int downloadedBytes;
+  final int? totalBytes;
+
+  double? get progress {
+    final total = totalBytes;
+    if (total == null || total <= 0) return null;
+    final value = downloadedBytes / total;
+    return value.clamp(0.0, 1.0);
+  }
 }

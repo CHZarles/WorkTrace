@@ -262,7 +262,7 @@ class _IoUpdateManager implements UpdateManager {
     final res = await http.get(uri, headers: {
       "Accept": "application/vnd.github+json",
       "User-Agent": _userAgent,
-    }).timeout(const Duration(seconds: 8));
+    });
 
     if (res.statusCode != 200) {
       throw Exception("http_${res.statusCode}");
@@ -358,7 +358,11 @@ class _IoUpdateManager implements UpdateManager {
     }
   }
 
-  Future<File> _downloadToTempFile(Uri url) async {
+  Future<File> _downloadToTempFile(
+    Uri url, {
+    int? expectedBytes,
+    void Function(UpdateInstallProgress progress)? onProgress,
+  }) async {
     final tmp = Directory.systemTemp;
     final lowerPath = url.path.toLowerCase();
     final ext = lowerPath.endsWith(".exe")
@@ -372,13 +376,44 @@ class _IoUpdateManager implements UpdateManager {
 
     final client = http.Client();
     try {
-      final res = await client.send(req).timeout(const Duration(seconds: 20));
+      final res = await client.send(req);
       if (res.statusCode != 200) throw Exception("http_${res.statusCode}");
+      final reportedLength = res.contentLength;
+      final contentLength = (reportedLength != null && reportedLength > 0)
+          ? reportedLength
+          : (expectedBytes ?? 0);
+      final totalBytes = contentLength > 0 ? contentLength : null;
       final sink = f.openWrite();
-      await res.stream.pipe(sink);
-      await sink.flush();
-      await sink.close();
+      var downloadedBytes = 0;
+      onProgress?.call(
+        UpdateInstallProgress(
+          phase: UpdateInstallPhase.downloading,
+          downloadedBytes: downloadedBytes,
+          totalBytes: totalBytes,
+        ),
+      );
+      try {
+        await for (final chunk in res.stream) {
+          downloadedBytes += chunk.length;
+          sink.add(chunk);
+          onProgress?.call(
+            UpdateInstallProgress(
+              phase: UpdateInstallPhase.downloading,
+              downloadedBytes: downloadedBytes,
+              totalBytes: totalBytes,
+            ),
+          );
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
       return f;
+    } catch (_) {
+      if (await f.exists()) {
+        await f.delete();
+      }
+      rethrow;
     } finally {
       client.close();
     }
@@ -647,6 +682,7 @@ try {
     required UpdateRelease latest,
     required String installAssetUrl,
     bool startMinimized = false,
+    void Function(UpdateInstallProgress progress)? onProgress,
   }) async {
     if (!isAvailable)
       return const UpdateInstallResult(ok: false, error: "not_supported");
@@ -681,7 +717,14 @@ try {
     }
 
     try {
-      final setupAsset = await _downloadToTempFile(url);
+      onProgress?.call(
+        const UpdateInstallProgress(phase: UpdateInstallPhase.preparing),
+      );
+      final setupAsset = await _downloadToTempFile(
+        url,
+        expectedBytes: latest.assetSizeBytes,
+        onProgress: onProgress,
+      );
       final stamp = DateTime.now().millisecondsSinceEpoch;
       final scriptFile =
           File(_join(Directory.systemTemp.path, "WorkTrace-update-$stamp.ps1"));
@@ -712,37 +755,21 @@ try {
         startArgs,
       ];
 
-      final updater = await Process.start(
+      onProgress?.call(
+        UpdateInstallProgress(
+          phase: UpdateInstallPhase.launchingInstaller,
+          downloadedBytes: latest.assetSizeBytes ?? 0,
+          totalBytes: latest.assetSizeBytes,
+        ),
+      );
+
+      await Process.start(
         "powershell.exe",
         args,
         runInShell: false,
         workingDirectory: Directory.systemTemp.path,
-        mode: ProcessStartMode.detachedWithStdio,
+        mode: ProcessStartMode.detached,
       );
-
-      final earlyExit = await updater.exitCode.timeout(
-        const Duration(milliseconds: 1200),
-        onTimeout: () => -2147483648,
-      );
-      if (earlyExit != -2147483648) {
-        String out = "";
-        String err = "";
-        try {
-          out = (await utf8.decodeStream(updater.stdout)).trim();
-        } catch (_) {
-          out = "";
-        }
-        try {
-          err = (await utf8.decodeStream(updater.stderr)).trim();
-        } catch (_) {
-          err = "";
-        }
-        final msg = [out, err].where((s) => s.isNotEmpty).join(" | ");
-        final detail = msg.isEmpty
-            ? "updater_exited_$earlyExit"
-            : "updater_exited_$earlyExit: $msg";
-        return UpdateInstallResult(ok: false, error: detail);
-      }
 
       return const UpdateInstallResult(ok: true);
     } catch (e) {
