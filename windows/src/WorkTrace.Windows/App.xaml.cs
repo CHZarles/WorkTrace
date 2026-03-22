@@ -1,7 +1,7 @@
 using Microsoft.UI.Xaml;
-using RecorderPhone.Windows.Services;
+using WorkTrace.Windows.Services;
 
-namespace RecorderPhone.Windows;
+namespace WorkTrace.Windows;
 
 public partial class App : Application
 {

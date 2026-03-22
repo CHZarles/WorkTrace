@@ -55,7 +55,7 @@ class _IoUpdateManager implements UpdateManager {
     final core = File("$base${sep}recorder_core.exe");
     final collector = File("$base${sep}windows_collector.exe");
     final workTraceUi = File("$base${sep}WorkTrace.exe");
-    final legacyUi = File("$base${sep}recorderphone_ui.exe");
+    final legacyUi = File("$base${sep}worktrace_ui.exe");
     final info = File("$base${sep}build-info.json");
     return core.existsSync() &&
         collector.existsSync() &&
@@ -572,7 +572,7 @@ function Resolve-UiExe {
   $alts = Get-ChildItem -Path $Dir -Filter "*.exe" -File -ErrorAction SilentlyContinue `
     | Where-Object { $_.Name -ne "recorder_core.exe" -and $_.Name -ne "windows_collector.exe" } `
     | Sort-Object `
-        @{ Expression = { if ($_.Name -ieq "WorkTrace.exe") { 0 } elseif ($_.Name -ieq "recorderphone_ui.exe") { 1 } else { 2 } } }, `
+        @{ Expression = { if ($_.Name -ieq "WorkTrace.exe") { 0 } elseif ($_.Name -ieq "worktrace_ui.exe") { 1 } else { 2 } } }, `
         @{ Expression = { $_.Name } }
   if ($alts -and $alts.Count -gt 0) { return $alts[0].FullName }
   return ""
@@ -617,8 +617,8 @@ try {
     Write-Log "fallback exe: $fallbackExe"
   }
 
-  $names = @("WorkTrace", "recorderphone_ui", "recorder_core", "windows_collector")
-  $images = @("WorkTrace.exe", "recorderphone_ui.exe", "recorder_core.exe", "windows_collector.exe")
+  $names = @("WorkTrace", "worktrace_ui", "recorder_core", "windows_collector")
+  $images = @("WorkTrace.exe", "worktrace_ui.exe", "recorder_core.exe", "windows_collector.exe")
   for ($i = 0; $i -lt 3; $i++) {
     Stop-ByName -Names $names
     Stop-ByImage -Images $images

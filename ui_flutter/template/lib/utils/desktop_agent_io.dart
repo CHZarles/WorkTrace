@@ -52,8 +52,7 @@ class _IoDesktopAgent implements DesktopAgent {
 
     final roots = <Directory>[];
 
-    final env = Platform.environment["WORKTRACE_REPO_ROOT"] ??
-        Platform.environment["RECORDERPHONE_REPO_ROOT"];
+    final env = Platform.environment["WORKTRACE_REPO_ROOT"];
     if (env != null && env.trim().isNotEmpty) {
       roots.add(Directory(env.trim()));
     }

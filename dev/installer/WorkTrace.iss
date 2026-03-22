@@ -61,7 +61,7 @@ function WorkTraceProcessName(Index: Integer): String;
 begin
   case Index of
     0: Result := 'WorkTrace.exe';
-    1: Result := 'recorderphone_ui.exe';
+    1: Result := 'worktrace_ui.exe';
     2: Result := 'recorder_core.exe';
     3: Result := 'windows_collector.exe';
   else

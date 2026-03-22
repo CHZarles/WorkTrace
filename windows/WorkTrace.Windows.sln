@@ -2,7 +2,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RecorderPhone.Windows", "src\\RecorderPhone.Windows\\RecorderPhone.Windows.csproj", "{703D7F7E-2600-42BD-A69B-D2D8AC2B4A21}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WorkTrace.Windows", "src\\WorkTrace.Windows\\WorkTrace.Windows.csproj", "{703D7F7E-2600-42BD-A69B-D2D8AC2B4A21}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

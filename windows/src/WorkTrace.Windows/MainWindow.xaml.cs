@@ -1,9 +1,9 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
-using RecorderPhone.Windows.Services;
+using WorkTrace.Windows.Services;
 using System.Collections.ObjectModel;
 
-namespace RecorderPhone.Windows;
+namespace WorkTrace.Windows;
 
 public sealed partial class MainWindow : Window
 {

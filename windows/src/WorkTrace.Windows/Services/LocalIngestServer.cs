@@ -4,10 +4,10 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using RecorderPhone.Windows.Models;
+using WorkTrace.Windows.Models;
 using System.Text.Json;
 
-namespace RecorderPhone.Windows.Services;
+namespace WorkTrace.Windows.Services;
 
 public sealed class LocalIngestServer : IAsyncDisposable
 {

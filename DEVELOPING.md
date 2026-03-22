@@ -10,7 +10,7 @@ core/              Rust 本机服务（recorder_core）
 collectors/        Windows 采集器（windows_collector）
 extension/         Chrome/Edge MV3 扩展（Tab 域名/标题/音频上报）
 ui_flutter/        Flutter UI 模板（真实工程用 overlay 覆盖）
-recorderphone_ui/  你本机生成的 Flutter 工程（运行/打包用，通常不提交）
+worktrace_ui/  你本机生成的 Flutter 工程（运行/打包用，通常不提交）
 dev/               开发/打包脚本（overlay/sync/package/run）
 schemas/           事件 schema（供扩展/采集器对齐）
 ```

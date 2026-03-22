@@ -11,7 +11,7 @@ Write-Host "[run-ui] repo: $RepoRoot"
 
 powershell -ExecutionPolicy Bypass -File (Join-Path $RepoRoot "dev\\overlay-ui.ps1") -RepoRoot $RepoRoot
 
-Push-Location (Join-Path $RepoRoot "recorderphone_ui")
+Push-Location (Join-Path $RepoRoot "worktrace_ui")
 Write-Host "[run-ui] flutter run -d $Device"
 flutter run -d $Device
 Pop-Location

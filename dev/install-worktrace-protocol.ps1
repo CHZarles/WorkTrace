@@ -33,8 +33,8 @@ function Resolve-DefaultExePath {
 
   $dirs = @(
     (Join-Path $RepoRoot "dist\\windows\\WorkTrace"),
-    (Join-Path $RepoRoot "recorderphone_ui\\build\\windows\\x64\\runner\\Debug"),
-    (Join-Path $RepoRoot "recorderphone_ui\\build\\windows\\x64\\runner\\Release")
+    (Join-Path $RepoRoot "worktrace_ui\\build\\windows\\x64\\runner\\Debug"),
+    (Join-Path $RepoRoot "worktrace_ui\\build\\windows\\x64\\runner\\Release")
   )
   foreach ($dir in $dirs) {
     $exe = Resolve-AppExeInDir -Dir $dir
@@ -65,12 +65,12 @@ if ([string]::IsNullOrWhiteSpace($ExePath) -or -not (Test-Path $ExePath)) {
   Write-Host "[protocol] WorkTrace executable not found."
   Write-Host "  Expected one of:"
   Write-Host "    $RepoRoot\\dist\\windows\\WorkTrace\\WorkTrace.exe"
-  Write-Host "    $RepoRoot\\recorderphone_ui\\build\\windows\\x64\\runner\\Debug\\*.exe"
-  Write-Host "    $RepoRoot\\recorderphone_ui\\build\\windows\\x64\\runner\\Release\\*.exe"
+  Write-Host "    $RepoRoot\\worktrace_ui\\build\\windows\\x64\\runner\\Debug\\*.exe"
+  Write-Host "    $RepoRoot\\worktrace_ui\\build\\windows\\x64\\runner\\Release\\*.exe"
   Write-Host ""
   Write-Host "Fix:"
   Write-Host "  1) Build/run the Flutter Windows app once:"
-  Write-Host "       cd $RepoRoot\\recorderphone_ui"
+  Write-Host "       cd $RepoRoot\\worktrace_ui"
   Write-Host "       flutter run -d windows"
   Write-Host "  2) Or build a packaged folder:"
   Write-Host "       cd $RepoRoot"

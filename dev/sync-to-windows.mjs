@@ -54,7 +54,7 @@ const EXCLUDE_GLOBS = [
   "windows/**/obj/",
   // Local-only Flutter working copy created on Windows side.
   // It is derived from `ui_flutter/template/` and should not be deleted by mirroring.
-  "recorderphone_ui/",
+  "worktrace_ui/",
   "data/",
   // Local Windows packaging output (do not delete when mirroring).
   "dist/"

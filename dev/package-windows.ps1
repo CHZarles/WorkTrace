@@ -340,14 +340,14 @@ function Write-BuildInfo {
 }
 
 if (-not $NoOverlayUI) {
-  Write-Host "[package] overlay UI template -> recorderphone_ui"
+  Write-Host "[package] overlay UI template -> worktrace_ui"
   & (Join-Path $RepoRoot "dev\\overlay-ui.ps1") -RepoRoot $RepoRoot
 }
 
 if (-not $NoBuild) {
   # Ensure builds don't fail due to locked target/release exes (dev agent / packaged agent still running).
   Write-Host "[package] stopping processes (pre-build)..."
-  Stop-ProcessesAndWait -Names @("WorkTrace", "recorderphone_ui", "recorder_core", "windows_collector") -TimeoutSeconds 6
+  Stop-ProcessesAndWait -Names @("WorkTrace", "worktrace_ui", "recorder_core", "windows_collector") -TimeoutSeconds 6
 
   Write-Host "[package] cargo build -p recorder_core --release"
   cargo build -p recorder_core --release
@@ -367,12 +367,12 @@ if (-not (Test-Path $collectorExe)) {
   throw "windows_collector.exe not found at: $collectorExe"
 }
 
-if (-not (Test-Path (Join-Path $RepoRoot "recorderphone_ui\\pubspec.yaml"))) {
-  throw "Missing recorderphone_ui (Flutter project). Run: flutter create --platforms=windows recorderphone_ui"
+if (-not (Test-Path (Join-Path $RepoRoot "worktrace_ui\\pubspec.yaml"))) {
+  throw "Missing worktrace_ui (Flutter project). Run: flutter create --platforms=windows worktrace_ui"
 }
 
 if (-not $NoBuild) {
-  Push-Location (Join-Path $RepoRoot "recorderphone_ui")
+  Push-Location (Join-Path $RepoRoot "worktrace_ui")
   Write-Host "[package] flutter build windows --release"
   flutter build windows --release
   Pop-Location
@@ -380,7 +380,7 @@ if (-not $NoBuild) {
   Write-Host "[package] -NoBuild: skip flutter build"
 }
 
-$flutterReleaseDir = Join-Path $RepoRoot "recorderphone_ui\\build\\windows\\x64\\runner\\Release"
+$flutterReleaseDir = Join-Path $RepoRoot "worktrace_ui\\build\\windows\\x64\\runner\\Release"
 if (-not (Test-Path $flutterReleaseDir)) {
   throw "Flutter release output not found at: $flutterReleaseDir"
 }
@@ -440,7 +440,7 @@ Copy-ItemWithRetry -From $coreExe -To (Join-Path $stagingDir "recorder_core.exe"
 Copy-ItemWithRetry -From $collectorExe -To (Join-Path $stagingDir "windows_collector.exe")
 
 # Rename UI entrypoint exe inside staging.
-$stagedUiExe = Join-Path $stagingDir "recorderphone_ui.exe"
+$stagedUiExe = Join-Path $stagingDir "worktrace_ui.exe"
 $stagedDistExe = Join-Path $stagingDir "WorkTrace.exe"
 if (Test-Path $stagedUiExe) {
   Move-Item -Force $stagedUiExe $stagedDistExe
@@ -462,15 +462,15 @@ Write-BuildInfo -Dir $stagingDir -CoreExe $coreExe -CollectorExe $collectorExe
 # 2) Stop running packaged processes (so we can swap/overwrite).
 Write-Host "[package] stopping running processes..."
 Stop-ProcessByExecutablePath (Join-Path $OutDir "WorkTrace.exe")
-Stop-ProcessByExecutablePath (Join-Path $OutDir "recorderphone_ui.exe")
+Stop-ProcessByExecutablePath (Join-Path $OutDir "worktrace_ui.exe")
 Stop-ProcessByExecutablePath (Join-Path $OutDir "recorder_core.exe")
 Stop-ProcessByExecutablePath (Join-Path $OutDir "windows_collector.exe")
 # Also stop any remaining processes by image name (handles cases where ExecutablePath is not accessible).
 Stop-ProcessByNameBestEffort "WorkTrace"
-Stop-ProcessByNameBestEffort "recorderphone_ui"
+Stop-ProcessByNameBestEffort "worktrace_ui"
 Stop-ProcessByNameBestEffort "recorder_core"
 Stop-ProcessByNameBestEffort "windows_collector"
-Stop-ProcessesAndWait -Names @("WorkTrace", "recorderphone_ui", "recorder_core", "windows_collector") -TimeoutSeconds 8
+Stop-ProcessesAndWait -Names @("WorkTrace", "worktrace_ui", "recorder_core", "windows_collector") -TimeoutSeconds 8
 
 # 3) Swap staged folder into place (atomic move if possible; otherwise in-place update).
 try {
@@ -524,7 +524,7 @@ if (-not $swapped) {
   }
 
   # Ensure UI entrypoint exists (fallback if rename didn't propagate).
-  $uiExe = Join-Path $OutDir "recorderphone_ui.exe"
+  $uiExe = Join-Path $OutDir "worktrace_ui.exe"
   $distExe = Join-Path $OutDir "WorkTrace.exe"
   if ((Test-Path $uiExe) -and (-not (Test-Path $distExe))) {
     Move-Item -Force $uiExe $distExe

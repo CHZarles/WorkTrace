@@ -16,8 +16,8 @@ if (-not (Test-Path ".\\ui_flutter\\template\\assets")) {
   throw "Missing ui_flutter\\template\\assets. Run from the WorkTrace repo."
 }
 
-if (-not (Test-Path ".\\recorderphone_ui")) {
-  throw "Missing recorderphone_ui. Create the Flutter project on Windows first."
+if (-not (Test-Path ".\\worktrace_ui")) {
+  throw "Missing worktrace_ui. Create the Flutter project on Windows first."
 }
 
 function Invoke-RobocopyMirror {
@@ -34,20 +34,20 @@ function Invoke-RobocopyMirror {
   }
 }
 
-Write-Host "[overlay-ui] robocopy template\\lib -> recorderphone_ui\\lib"
-Invoke-RobocopyMirror -From ".\\ui_flutter\\template\\lib" -To ".\\recorderphone_ui\\lib"
+Write-Host "[overlay-ui] robocopy template\\lib -> worktrace_ui\\lib"
+Invoke-RobocopyMirror -From ".\\ui_flutter\\template\\lib" -To ".\\worktrace_ui\\lib"
 
-Write-Host "[overlay-ui] robocopy template\\assets -> recorderphone_ui\\assets"
-Invoke-RobocopyMirror -From ".\\ui_flutter\\template\\assets" -To ".\\recorderphone_ui\\assets"
+Write-Host "[overlay-ui] robocopy template\\assets -> worktrace_ui\\assets"
+Invoke-RobocopyMirror -From ".\\ui_flutter\\template\\assets" -To ".\\worktrace_ui\\assets"
 
-Write-Host "[overlay-ui] copy template\\pubspec.yaml -> recorderphone_ui\\pubspec.yaml"
-Copy-Item -Force ".\\ui_flutter\\template\\pubspec.yaml" ".\\recorderphone_ui\\pubspec.yaml"
+Write-Host "[overlay-ui] copy template\\pubspec.yaml -> worktrace_ui\\pubspec.yaml"
+Copy-Item -Force ".\\ui_flutter\\template\\pubspec.yaml" ".\\worktrace_ui\\pubspec.yaml"
 
-Push-Location ".\\recorderphone_ui"
+Push-Location ".\\worktrace_ui"
 Write-Host "[overlay-ui] flutter pub get"
 flutter pub get
 Pop-Location
 
 Write-Host "[overlay-ui] done. Next:"
-Write-Host "  cd .\\recorderphone_ui"
+Write-Host "  cd .\\worktrace_ui"
 Write-Host "  flutter run -d windows"

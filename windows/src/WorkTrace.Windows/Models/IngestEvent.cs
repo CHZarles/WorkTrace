@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace RecorderPhone.Windows.Models;
+namespace WorkTrace.Windows.Models;
 
 public sealed record IngestEvent
 {

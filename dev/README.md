@@ -55,7 +55,7 @@ node dev/sync-to-windows.mjs /mnt/c/src/WorkTrace
 
 注意：
 - `dev/sync-to-windows.mjs` 默认会做 `--delete` 镜像，**会删除 Windows 侧额外创建的文件夹**。
-- 已内置保护 `C:\\src\\WorkTrace\\recorderphone_ui`（Flutter 工作副本）不会被删除；若你在更新前已经启动过 sync，记得重启该脚本使排除规则生效。
+- 已内置保护 `C:\\src\\WorkTrace\\worktrace_ui`（Flutter 工作副本）不会被删除；若你在更新前已经启动过 sync，记得重启该脚本使排除规则生效。
 
 ## 方案 D：临时替代（Node 接收服务）
 如果你暂时不想装 Rust 工具链，可用简化接收服务联调扩展：

@@ -1,6 +1,6 @@
-using RecorderPhone.Windows.Models;
+using WorkTrace.Windows.Models;
 
-namespace RecorderPhone.Windows.Services;
+namespace WorkTrace.Windows.Services;
 
 public sealed class IngestEventStore
 {

@@ -3,7 +3,7 @@
 你现在的工作方式是：**WSL 里改代码**，但很多“看效果”的动作（Flutter Windows、浏览器扩展、Windows 采集器）都发生在 **Windows**。  
 这份文档把“如何在 Windows 看到 WSL 的最新改动”讲清楚，并给出可复制的命令。
 
-说明：文档里的示例仓库路径和默认数据目录现在都用 `WorkTrace`；Flutter 工程目录 `recorderphone_ui/` 仍是当前内部目录名。
+说明：文档里的示例仓库路径和默认数据目录现在都用 `WorkTrace`；Flutter 工程目录 `worktrace_ui/` 仍是当前内部目录名。
 
 如果你只是想“像普通桌面软件一样用”，不想折腾开发环境：
 - 直接走 GitHub Releases 下载打包版：`RELEASING.md`
@@ -12,13 +12,13 @@
 
 ## 0) 关键点：模板 vs 真实 Flutter 工程
 
-仓库里 `ui_flutter/template/` 只是 **模板源码**；你在 Windows 上运行的是 `recorderphone_ui/`（`flutter create` 生成的真实工程）。
+仓库里 `ui_flutter/template/` 只是 **模板源码**；你在 Windows 上运行的是 `worktrace_ui/`（`flutter create` 生成的真实工程）。
 
 因此：
-- WSL 同步脚本会**同步整个仓库到 Windows**，但会**刻意排除** `recorderphone_ui/`（避免 rsync `--delete` 把你的 Windows 工程删掉）。
-- **UI 变更要生效**：你需要把 `ui_flutter/template/` 的内容手动覆盖到 `recorderphone_ui/`。
+- WSL 同步脚本会**同步整个仓库到 Windows**，但会**刻意排除** `worktrace_ui/`（避免 rsync `--delete` 把你的 Windows 工程删掉）。
+- **UI 变更要生效**：你需要把 `ui_flutter/template/` 的内容手动覆盖到 `worktrace_ui/`。
 
-如果你感觉“界面没变化”，通常就是因为只同步了仓库，但**没有覆盖到 `recorderphone_ui/lib`**（这是正常现象）。
+如果你感觉“界面没变化”，通常就是因为只同步了仓库，但**没有覆盖到 `worktrace_ui/lib`**（这是正常现象）。
 
 ---
 
@@ -96,15 +96,15 @@ powershell -ExecutionPolicy Bypass -File .\dev\run-collector.ps1 -CoreUrl http:/
 cd C:\src\WorkTrace
 
 # 用模板覆盖真实工程的 lib/（会删除 lib/ 下模板没有的文件）
-robocopy .\ui_flutter\template\lib .\recorderphone_ui\lib /MIR
+robocopy .\ui_flutter\template\lib .\worktrace_ui\lib /MIR
 
 # 同步模板 assets/（例如托盘图标 tray.ico）
-robocopy .\ui_flutter\template\assets .\recorderphone_ui\assets /MIR
+robocopy .\ui_flutter\template\assets .\worktrace_ui\assets /MIR
 
 # 覆盖 pubspec.yaml（PowerShell 用 Copy-Item，别用 copy /Y）
-Copy-Item -Force .\ui_flutter\template\pubspec.yaml .\recorderphone_ui\pubspec.yaml
+Copy-Item -Force .\ui_flutter\template\pubspec.yaml .\worktrace_ui\pubspec.yaml
 
-cd .\recorderphone_ui
+cd .\worktrace_ui
 flutter pub get
 ```
 
@@ -127,7 +127,7 @@ flutter run -d windows
 ```
 
 快速自检（确认你确实覆盖成功）：
-- 打开 `C:\src\WorkTrace\recorderphone_ui\lib\screens\today_screen.dart`，搜索 `Block details`。
+- 打开 `C:\src\WorkTrace\worktrace_ui\lib\screens\today_screen.dart`，搜索 `Block details`。
 - 如果没有这个字符串，说明模板还没覆盖到真实工程。
 
 ---
@@ -205,7 +205,7 @@ powershell -ExecutionPolicy Bypass -File .\dev\install-worktrace-protocol.ps1
 
 如果脚本提示找不到 WorkTrace 可执行文件：
 - 先运行一次 Windows UI（会生成 exe）：
-  - `cd C:\src\WorkTrace\recorderphone_ui`
+  - `cd C:\src\WorkTrace\worktrace_ui`
   - `flutter run -d windows`
 - 然后再重新跑安装脚本
 

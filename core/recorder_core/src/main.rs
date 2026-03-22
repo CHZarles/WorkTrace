@@ -4526,7 +4526,7 @@ async fn generate_daily_report(
     };
 
     let input = json!({
-      "schema": "recorderphone_report_v1",
+      "schema": "worktrace_report_v1",
       "kind": "daily",
       "date": date,
       "tz_offset_minutes": tz_offset_minutes,
@@ -4884,7 +4884,7 @@ async fn generate_weekly_report(
         .collect();
 
     let input = json!({
-      "schema": "recorderphone_report_v1",
+      "schema": "worktrace_report_v1",
       "kind": "weekly",
       "week_start": start,
       "week_end": end,

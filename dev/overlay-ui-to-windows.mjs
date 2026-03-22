@@ -4,7 +4,7 @@
  *
  * Why:
  * - `ui_flutter/template/` is the source of truth for UI code.
- * - Your real runnable Flutter project lives in Windows at `recorderphone_ui/` (created by `flutter create`).
+ * - Your real runnable Flutter project lives in Windows at `worktrace_ui/` (created by `flutter create`).
  * - If you can't (or don't want to) run PowerShell scripts, you can run this from WSL to keep UI in sync.
  *
  * Usage:
@@ -12,9 +12,9 @@
  *   node dev/overlay-ui-to-windows.mjs /mnt/c/src/WorkTrace --watch
  *
  * What it does:
- * - rsync `ui_flutter/template/lib/` -> `<dest>/recorderphone_ui/lib/` (with --delete)
- * - rsync `ui_flutter/template/assets/` -> `<dest>/recorderphone_ui/assets/` (with --delete)
- * - copy `ui_flutter/template/pubspec.yaml` -> `<dest>/recorderphone_ui/pubspec.yaml`
+ * - rsync `ui_flutter/template/lib/` -> `<dest>/worktrace_ui/lib/` (with --delete)
+ * - rsync `ui_flutter/template/assets/` -> `<dest>/worktrace_ui/assets/` (with --delete)
+ * - copy `ui_flutter/template/pubspec.yaml` -> `<dest>/worktrace_ui/pubspec.yaml`
  *
  * Notes:
  * - This script does NOT run `flutter pub get` (run it on Windows when pubspec changes).
@@ -40,7 +40,7 @@ const SRC_ASSETS = path.join(SRC_ROOT, "ui_flutter", "template", "assets");
 const SRC_PUBSPEC = path.join(SRC_ROOT, "ui_flutter", "template", "pubspec.yaml");
 
 const DEST_REPO = path.resolve(destRoot);
-const DEST_UI = path.join(DEST_REPO, "recorderphone_ui");
+const DEST_UI = path.join(DEST_REPO, "worktrace_ui");
 const DEST_LIB = path.join(DEST_UI, "lib");
 const DEST_ASSETS = path.join(DEST_UI, "assets");
 const DEST_PUBSPEC = path.join(DEST_UI, "pubspec.yaml");
@@ -61,7 +61,7 @@ assertExists(SRC_ASSETS, "Missing ui_flutter/template/assets.");
 assertExists(SRC_PUBSPEC, "Missing ui_flutter/template/pubspec.yaml.");
 assertExists(
   DEST_UI,
-  "Create your Windows Flutter project first (on Windows):\n  flutter create --platforms=windows recorderphone_ui"
+  "Create your Windows Flutter project first (on Windows):\n  flutter create --platforms=windows worktrace_ui"
 );
 
 async function ensureDest() {

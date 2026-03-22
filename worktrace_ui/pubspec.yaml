@@ -1,7 +1,7 @@
-name: recorderphone_ui
+name: worktrace_ui
 description: WorkTrace Flutter UI
 publish_to: "none"
-version: 0.1.0
+version: 0.1.29
 
 environment:
   sdk: ">=3.4.0 <4.0.0"

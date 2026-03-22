@@ -7,8 +7,8 @@
 > 本仓库在 Linux 环境下无法编译 WinUI 3（这里只提供工程骨架与代码结构）。
 
 ## 打开与运行
-- 打开解决方案：`windows/RecorderPhone.Windows.sln`
-- 运行项目：`RecorderPhone.Windows`
+- 打开解决方案：`windows/WorkTrace.Windows.sln`
+- 运行项目：`WorkTrace.Windows`
 
 ## 常见错误：NETSDK1083（win10-arm）
 如果你看到类似错误：`RuntimeIdentifier 'win10-arm' is not recognized`：
@@ -22,5 +22,5 @@
 
 ## Tokens / 主题
 - 源：`design-tokens.json`
-- WinUI 主题字典：`windows/src/RecorderPhone.Windows/Themes/RecorderTheme.xaml`
+- WinUI 主题字典：`windows/src/WorkTrace.Windows/Themes/RecorderTheme.xaml`
 - `App.xaml` 已合并该资源字典，可直接用 `{ThemeResource BrushBg1}` / `{StaticResource RadiusM}` 等资源。

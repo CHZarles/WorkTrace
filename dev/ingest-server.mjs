@@ -111,7 +111,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/health") {
-    json(res, 200, { ok: true, service: "ingest_server", version: "0.1.0" });
+    json(res, 200, { ok: true, service: "ingest_server", version: "0.1.29" });
     return;
   }
 
