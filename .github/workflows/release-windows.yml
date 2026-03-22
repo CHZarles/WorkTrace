@@ -49,10 +49,10 @@ jobs:
       - name: Ensure Flutter Windows project files
         shell: pwsh
         run: |
-          if (!(Test-Path ".\\recorderphone_ui")) {
-            New-Item -ItemType Directory -Force ".\\recorderphone_ui" | Out-Null
+          if (!(Test-Path ".\\worktrace_ui")) {
+            New-Item -ItemType Directory -Force ".\\worktrace_ui" | Out-Null
           }
-          Push-Location ".\\recorderphone_ui"
+          Push-Location ".\\worktrace_ui"
           flutter create --platforms=windows --overwrite .
           Pop-Location
 
