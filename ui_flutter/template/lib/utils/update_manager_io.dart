@@ -419,6 +419,26 @@ class _IoUpdateManager implements UpdateManager {
     }
   }
 
+  Future<bool> _waitForFile(
+    File file, {
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    final end = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(end)) {
+      try {
+        if (await file.exists()) return true;
+      } catch (_) {
+        // ignore
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    try {
+      return await file.exists();
+    } catch (_) {
+      return false;
+    }
+  }
+
   String _updaterScript() {
     // Keep the script self-contained to avoid shipping extra files in the app.
     return r'''
@@ -428,7 +448,8 @@ param(
   [string]$PreferredExeName = "WorkTrace.exe",
   [string]$AppId = "",
   [int]$UiPid = 0,
-  [string]$StartArgs = ""
+  [string]$StartArgs = "",
+  [string]$AckPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -438,6 +459,13 @@ function Write-Log {
   param([Parameter(Mandatory=$true)][string]$Line)
   try {
     Add-Content -Path $LogPath -Value ("[{0}] {1}" -f (Get-Date).ToString("s"), $Line)
+  } catch {}
+}
+
+function Write-Ack {
+  if ([string]::IsNullOrWhiteSpace($AckPath)) { return }
+  try {
+    Set-Content -Path $AckPath -Value "started" -Encoding utf8 -Force
   } catch {}
 }
 
@@ -602,6 +630,7 @@ function Start-App {
 }
 
 Write-Log "updater started setup=$SetupPath installDir=$InstallDir appId=$AppId uiPid=$UiPid"
+Write-Ack
 
 $targetInstallDir = ""
 $fallbackExe = ""
@@ -729,6 +758,11 @@ try {
       final scriptFile =
           File(_join(Directory.systemTemp.path, "WorkTrace-update-$stamp.ps1"));
       await scriptFile.writeAsString(_updaterScript(), flush: true);
+      final ackFile =
+          File(_join(Directory.systemTemp.path, "WorkTrace-update-$stamp.ack"));
+      if (await ackFile.exists()) {
+        await ackFile.delete();
+      }
 
       final preferredExeName = "WorkTrace.exe";
       final startArgs = startMinimized ? "--minimized" : "";
@@ -753,6 +787,8 @@ try {
         pid.toString(),
         "-StartArgs",
         startArgs,
+        "-AckPath",
+        ackFile.path,
       ];
 
       onProgress?.call(
@@ -770,6 +806,14 @@ try {
         workingDirectory: Directory.systemTemp.path,
         mode: ProcessStartMode.detached,
       );
+
+      final confirmed = await _waitForFile(ackFile);
+      if (!confirmed) {
+        return const UpdateInstallResult(
+          ok: false,
+          error: "updater_not_confirmed",
+        );
+      }
 
       return const UpdateInstallResult(ok: true);
     } catch (e) {
