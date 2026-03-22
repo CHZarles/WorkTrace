@@ -39,4 +39,10 @@ recorderphone_ui/**/.flutter-plugins
 recorderphone_ui/**/.flutter-plugins-dependencies
 recorderphone_ui/**/.idea/
 recorderphone_ui/pubspec.lock
+worktrace_ui/**/.dart_tool/
+worktrace_ui/**/build/
+worktrace_ui/**/.flutter-plugins
+worktrace_ui/**/.flutter-plugins-dependencies
+worktrace_ui/**/.idea/
+worktrace_ui/pubspec.lock
 package-installer.log
